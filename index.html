@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>Iron Nest — Fire Control</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --panel2:#0e141c; --line:#22303f;
+    --ink:#e6edf3; --dim:#8b98a5; --accent:#ffb347; --accent2:#4ea1ff;
+    --good:#3fb950; --bad:#f85149; --rec:#1f6feb; --mono:'DejaVu Sans Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    padding:14px; max-width:960px; margin:0 auto;
+    -webkit-text-size-adjust:100%;
+  }
+  h1{font-size:19px;margin:0 0 2px;letter-spacing:.5px}
+  h1 .sub{color:var(--dim);font-weight:400;font-size:13px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin:0 0 10px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){.grid2{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--dim);margin:0 0 4px}
+  input[type=text],input[type=number]{
+    width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:8px;padding:11px 12px;font:16px/1 var(--mono);letter-spacing:.5px;
+  }
+  input:focus{outline:none;border-color:var(--accent2)}
+  input.bad{border-color:var(--bad)}
+  .row{display:flex;gap:10px;align-items:end}
+  .row>div{flex:1}
+  button{
+    background:#1b2735;border:1px solid var(--line);color:var(--ink);
+    border-radius:8px;padding:10px 14px;font-size:14px;cursor:pointer;
+  }
+  button:hover{border-color:var(--accent2)}
+  button.primary{background:var(--rec);border-color:var(--rec)}
+  .tiles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .tile{flex:1;min-width:120px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .tile .k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
+  .tile .v{font:26px/1.1 var(--mono);font-weight:600;margin-top:3px}
+  .tile .v small{font-size:14px;color:var(--dim);font-weight:400}
+  table{width:100%;border-collapse:collapse;font:14px/1.3 var(--mono)}
+  th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  tr.rec td{background:rgba(31,111,235,.16)}
+  .pill{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;background:var(--rec);color:#fff;vertical-align:middle;margin-left:6px;letter-spacing:.5px}
+  .pill.est{background:#5a4a1f;color:var(--accent)}
+  .muted{color:var(--dim)}
+  .warn{color:var(--accent)}
+  .err{color:var(--bad)}
+  .switch{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+  details{border-top:1px solid var(--line);margin-top:4px}
+  details>summary{cursor:pointer;padding:12px 2px;color:var(--dim);font-size:13px;list-style:none}
+  details>summary::-webkit-details-marker{display:none}
+  details>summary::before{content:'▸ ';color:var(--accent2)}
+  details[open]>summary::before{content:'▾ '}
+  .small{font-size:12px}
+  .cal-row{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+  .cal-row>div{flex:1;min-width:70px}
+  .hint{font-size:11px;color:var(--dim);margin-top:5px}
+  .hint code{color:var(--accent);background:var(--panel2);padding:1px 5px;border-radius:4px}
+  #selftest pre{white-space:pre-wrap;font:12px/1.5 var(--mono);margin:8px 0 0}
+  .flex-between{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .tag{font-size:11px;color:var(--dim)}
+</style>
+</head>
+<body>
+
+<h1>🎯 Iron Nest — Fire Control <span class="sub">·  grid → range · bearing · charge · elevation</span></h1>
+
+<div class="panel">
+  <h2>Positions</h2>
+  <div class="grid2">
+    <div>
+      <label>Gun / Turret position</label>
+      <input id="gun" type="text" inputmode="text" placeholder="e.g. F5-3,4" value="F5-5,5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div>
+      <label>Target position</label>
+      <input id="tgt" type="text" inputmode="text" placeholder="e.g. K7-1,8" value="K7-1,8" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    </div>
+  </div>
+  <div class="hint">Format <code>&lt;Col&gt;&lt;Row&gt;-&lt;subX&gt;,&lt;subY&gt;</code> — Col A–T, Row 0–10, subgrid 0–9 (100&nbsp;m). Decimals ok: <code>F5-3.5,4.2</code>. <button id="swap" style="padding:3px 9px;font-size:12px;margin-left:6px">⇄ swap</button></div>
+  <div id="posErr" class="hint err" style="display:none"></div>
+</div>
+
+<div class="panel" id="solution">
+  <h2>Firing Solution</h2>
+  <div class="tiles">
+    <div class="tile"><div class="k">Range</div><div class="v" id="oRange">—</div></div>
+    <div class="tile"><div class="k">Bearing</div><div class="v" id="oBearing">—</div></div>
+    <div class="tile"><div class="k">Recommended</div><div class="v" id="oRec">—</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Charge</th><th>Elevation</th><th>Flight time</th><th>Note</th></tr></thead>
+    <tbody id="chargeRows"><tr><td colspan="4" class="muted">Enter positions…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <div class="flex-between">
+    <h2 style="margin:0">Moving Target — Intercept</h2>
+    <label class="switch small"><input type="checkbox" id="moveOn"> enable</label>
+  </div>
+  <div id="moveBody" style="display:none;margin-top:12px">
+    <div class="row">
+      <div>
+        <label>Target speed (m/s)</label>
+        <input id="spd" type="number" min="0" step="0.5" value="10" inputmode="decimal">
+      </div>
+      <div>
+        <label>Target heading (° compass)</label>
+        <input id="hdg" type="number" min="0" max="360" step="1" value="270" inputmode="decimal">
+      </div>
+    </div>
+    <div class="hint">Target's current position is the <b>Target</b> field above. It moves on this heading; the solver leads it. Flight-time accuracy depends on TOF calibration below.</div>
+    <table style="margin-top:12px">
+      <thead><tr><th>Charge</th><th>Aim point</th><th>Bearing</th><th>Elev</th><th>Impact&nbsp;in</th></tr></thead>
+      <tbody id="interRows"><tr><td colspan="5" class="muted">—</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<details>
+  <summary>⏱ Time-of-flight calibration <span class="tag" id="calSummary"></span></summary>
+  <div class="panel" style="border-top:none;border-radius:0 0 12px 12px;margin-top:0">
+    <p class="small muted" style="margin-top:0">The firing table has no flight times, so intercept TOF starts as a rough <b>estimate</b>. To make intercepts accurate: fire a shot, count seconds to impact, and log <em>charge · range · seconds</em>. Two+ points per charge → linear fit.</p>
+    <div class="cal-row">
+      <div><label>Charge</label><input id="calC" type="number" min="1" max="6" step="1" value="3"></div>
+      <div><label>Range (km)</label><input id="calR" type="number" min="0" step="0.1" value="12"></div>
+      <div><label>Flight (s)</label><input id="calT" type="number" min="0" step="0.1" value="36"></div>
+      <div style="flex:0"><label>&nbsp;</label><button id="calAdd" class="primary">Log</button></div>
+    </div>
+    <div id="calList" class="small" style="margin-top:12px"></div>
+    <div style="margin-top:10px"><button id="calReset">Reset all calibration</button></div>
+  </div>
+</details>
+
+<details>
+  <summary>⚙ Settings</summary>
+  <div class="panel" style="border-top:none;border-radius:0 0 12px 12px;margin-top:0">
+    <label class="switch"><input type="checkbox" id="setNorth" checked> Row/subgrid increases <b>southward</b> (row 0 = North / top of map)</label>
+    <p class="hint" style="margin-top:4px">If in-game bearings look mirrored N↔S, uncheck this. Verify with a known due-East shot (should read 90°).</p>
+    <div class="row" style="margin-top:12px">
+      <div>
+        <label>Angle display</label>
+        <select id="setUnit" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px">
+          <option value="deg">Degrees (0–360)</option>
+          <option value="mil64">NATO mils (6400)</option>
+          <option value="mil60">Mils (6000)</option>
+        </select>
+      </div>
+      <div>
+        <label>TOF seed (s per km)</label>
+        <input id="setSeed" type="number" min="0" step="0.1" value="3">
+      </div>
+    </div>
+    <p class="hint">Elevation is always shown in degrees (the firing table's unit). The unit setting affects <b>bearing</b> display.</p>
+  </div>
+</details>
+
+<details>
+  <summary>🧪 Self-tests</summary>
+  <div class="panel" style="border-top:none;border-radius:0 0 12px 12px;margin-top:0" id="selftest">
+    <button id="runTests" class="primary">Run self-tests</button>
+    <pre id="testOut" class="muted">Not run.</pre>
+  </div>
+</details>
+
+<p class="hint" style="text-align:center;margin-top:18px">Ballistics from the in-game Firing Table · elevation = (12 ÷ charge) × range(km), cap 60°, 5&nbsp;km/charge · Offline &amp; self-contained.</p>
+
+<script>
+// ==FCS_CORE_START== (pure, no DOM — extracted for headless self-test)
+var DEFAULT_SLOPES = [12, 6, 4, 3, 2.4, 2.0]; // deg per km, charges 1..6
+var ELEV_CAP = 60;   // max gun elevation (deg)
+var BAND_KM  = 5;    // km covered per charge
+
+function parsePosition(str){
+  if(str==null) return null;
+  var s = String(str).trim().toUpperCase();
+  var m = s.match(/^([A-T])\s*(\d{1,2})\s*[-,\s]\s*(\d+(?:\.\d+)?)\s*[,\s]\s*(\d+(?:\.\d+)?)$/);
+  if(!m) return null;
+  var col = m[1].charCodeAt(0) - 65;      // A=0 .. T=19
+  var row = parseInt(m[2], 10);           // 0..10
+  var subX = parseFloat(m[3]);
+  var subY = parseFloat(m[4]);
+  if(row < 0 || row > 10) return null;
+  if(subX < 0 || subX >= 10 || subY < 0 || subY >= 10) return null;
+  return { col: col, row: row, subX: subX, subY: subY };
+}
+
+function toWorld(p){
+  // world metres, +x = East, +y = increasing row/subgrid (map-down)
+  return { x: p.col*1000 + p.subX*100, y: p.row*1000 + p.subY*100 };
+}
+
+function worldToPos(x, y){
+  var col = Math.floor(x/1000), row = Math.floor(y/1000);
+  var subX = (x - col*1000)/100, subY = (y - row*1000)/100;
+  var letter = (col >= 0 && col < 26) ? String.fromCharCode(65+col) : '?';
+  return letter + row + '-' + subX.toFixed(1) + ',' + subY.toFixed(1);
+}
+
+function normDeg(d){ d = d % 360; if(d < 0) d += 360; return d; }
+
+// northUp: true => smaller y is North (row 0 at top)
+function rangeBearing(gun, tgt, northUp){
+  var g = toWorld(gun), t = toWorld(tgt);
+  var dx = t.x - g.x, dyw = t.y - g.y;
+  var dNorth = northUp ? -dyw : dyw;
+  var meters = Math.sqrt(dx*dx + dyw*dyw);
+  var bearing = normDeg(Math.atan2(dx, dNorth) * 180/Math.PI);
+  return { meters: meters, km: meters/1000, bearing: bearing };
+}
+
+// All charges that can reach range `km` (elevation within cap), ascending charge.
+// First entry = minimum charge = steepest arc = recommended.
+function validCharges(km, slopes){
+  slopes = slopes || DEFAULT_SLOPES;
+  var out = [];
+  if(!(km > 0)) return out;
+  for(var k = 1; k <= slopes.length; k++){
+    var elev = slopes[k-1] * km;
+    if(elev <= ELEV_CAP + 1e-9) out.push({ charge: k, elevation: elev });
+  }
+  return out;
+}
+function maxRange(slopes){ slopes = slopes || DEFAULT_SLOPES; return slopes.length * BAND_KM; }
+
+// ---- Time of flight (calibratable) ----
+function tofSeed(km, seedPerKm){ return km * seedPerKm; }
+
+function fitTOF(points){
+  if(!points || points.length === 0) return null;
+  if(points.length === 1){
+    var p = points[0];
+    return { type:'prop', m: p.tof_s/(p.range_km || 1e-9), b:0 };
+  }
+  var n=points.length, sx=0, sy=0, sxx=0, sxy=0;
+  for(var i=0;i<n;i++){
+    var q=points[i]; sx+=q.range_km; sy+=q.tof_s; sxx+=q.range_km*q.range_km; sxy+=q.range_km*q.tof_s;
+  }
+  var denom = n*sxx - sx*sx;
+  if(Math.abs(denom) < 1e-9) return { type:'prop', m: sy/(sx||1e-9), b:0 };
+  var m = (n*sxy - sx*sy)/denom;
+  var b = (sy - m*sx)/n;
+  return { type:'fit', m:m, b:b };
+}
+
+function tofFor(charge, km, cal, seedPerKm){
+  var pts = (cal && cal[charge]) ? cal[charge] : [];
+  var fit = fitTOF(pts);
+  if(!fit) return { tof: tofSeed(km, seedPerKm), src:'seed' };
+  var t = fit.m*km + fit.b; if(t < 0) t = 0;
+  return { tof: t, src: (fit.type==='prop' ? 'cal1' : 'cal') };
+}
+
+// Intercept: iterate t <- TOF(range(gun, targetAt(t))) with damping.
+function solveIntercept(gun, tgt, speed, headingDeg, charge, cfg, cal){
+  var slopes = cfg.slopes || DEFAULT_SLOPES;
+  var g = toWorld(gun), p0 = toWorld(tgt);
+  var br = headingDeg * Math.PI/180;
+  var vE = speed*Math.sin(br), vN = speed*Math.cos(br);
+  var vx = vE, vy = cfg.northUp ? -vN : vN;
+  var t = 0, conv = false, src = 'seed';
+  for(var i=0;i<200;i++){
+    var px = p0.x + vx*t, py = p0.y + vy*t;
+    var R = Math.sqrt((px-g.x)*(px-g.x) + (py-g.y)*(py-g.y))/1000;
+    var r = tofFor(charge, R, cal, cfg.seedPerKm); src = r.src;
+    if(Math.abs(r.tof - t) < 1e-4){ t = r.tof; conv = true; break; }
+    t = t + (r.tof - t)*0.7;
+  }
+  var fx = p0.x + vx*t, fy = p0.y + vy*t;
+  var dx = fx-g.x, dyw = fy-g.y;
+  var R2 = Math.sqrt(dx*dx + dyw*dyw)/1000;
+  var elev = slopes[charge-1]*R2;
+  var valid = conv && R2 > 0 && elev <= ELEV_CAP + 1e-9 && R2 <= maxRange(slopes);
+  var dNorth = cfg.northUp ? -dyw : dyw;
+  var bearing = normDeg(Math.atan2(dx, dNorth) * 180/Math.PI);
+  return { conv:conv, t:t, range_km:R2, elevation:elev, bearing:bearing, valid:valid, point:worldToPos(fx,fy), src:src };
+}
+
+if (typeof module !== 'undefined' && module.exports){
+  module.exports = { DEFAULT_SLOPES:DEFAULT_SLOPES, ELEV_CAP:ELEV_CAP, BAND_KM:BAND_KM,
+    parsePosition:parsePosition, toWorld:toWorld, worldToPos:worldToPos, rangeBearing:rangeBearing,
+    validCharges:validCharges, maxRange:maxRange, tofSeed:tofSeed, fitTOF:fitTOF, tofFor:tofFor,
+    solveIntercept:solveIntercept, normDeg:normDeg };
+}
+// ==FCS_CORE_END==
+
+// ------------------- UI / state (browser only) -------------------
+(function(){
+  if (typeof document === 'undefined') return;
+  var $ = function(id){ return document.getElementById(id); };
+  var LS_SET = 'in_fcs_settings_v1', LS_CAL = 'in_fcs_cal_v1';
+
+  var settings = { northUp:true, unit:'deg', seedPerKm:3 };
+  var cal = {}; // { charge: [ {range_km, tof_s} ] }
+
+  try { var s = JSON.parse(localStorage.getItem(LS_SET)); if(s) settings = Object.assign(settings, s); } catch(e){}
+  try { var c = JSON.parse(localStorage.getItem(LS_CAL)); if(c) cal = c; } catch(e){}
+
+  function saveSettings(){ try{ localStorage.setItem(LS_SET, JSON.stringify(settings)); }catch(e){} }
+  function saveCal(){ try{ localStorage.setItem(LS_CAL, JSON.stringify(cal)); }catch(e){} }
+  function cfg(){ return { northUp:settings.northUp, seedPerKm:Number(settings.seedPerKm)||3, slopes:DEFAULT_SLOPES }; }
+
+  function fmtBearing(deg){
+    if(settings.unit === 'mil64') return (deg*6400/360).toFixed(0) + ' mil';
+    if(settings.unit === 'mil60') return (deg*6000/360).toFixed(0) + ' mil';
+    return deg.toFixed(1) + '°';
+  }
+  function fmtElev(deg){ return deg.toFixed(2) + '°'; }
+  function fmtTof(t, src){
+    var tag = src==='seed' ? ' <span class="pill est">EST</span>' : '';
+    return t.toFixed(1) + 's' + tag;
+  }
+
+  // ---- main recompute ----
+  function compute(){
+    var gunS = $('gun').value, tgtS = $('tgt').value;
+    var gun = parsePosition(gunS), tgt = parsePosition(tgtS);
+    $('gun').classList.toggle('bad', gunS.trim()!=='' && !gun);
+    $('tgt').classList.toggle('bad', tgtS.trim()!=='' && !tgt);
+
+    var err = $('posErr');
+    if(!gun || !tgt){
+      err.style.display = (gunS.trim() && !gun) || (tgtS.trim() && !tgt) ? 'block' : 'none';
+      err.textContent = 'Check position format — e.g. F5-3,4  (Col A–T, Row 0–10, subgrid 0–9).';
+      $('oRange').textContent = $('oBearing').textContent = $('oRec').textContent = '—';
+      $('chargeRows').innerHTML = '<tr><td colspan="4" class="muted">Enter valid positions…</td></tr>';
+      $('interRows').innerHTML = '<tr><td colspan="5" class="muted">—</td></tr>';
+      return;
+    }
+    err.style.display = 'none';
+
+    var rb = rangeBearing(gun, tgt, settings.northUp);
+    $('oRange').innerHTML = rb.km.toFixed(2) + ' <small>km</small>';
+    $('oBearing').innerHTML = fmtBearing(rb.bearing);
+
+    var charges = validCharges(rb.km, DEFAULT_SLOPES);
+    if(charges.length === 0){
+      $('oRec').innerHTML = '<small class="err">out of range</small>';
+      var reason = rb.km <= 0 ? 'same position' : ('range ' + rb.km.toFixed(2) + ' km &gt; max ' + maxRange() + ' km');
+      $('chargeRows').innerHTML = '<tr><td colspan="4" class="err">No solution — ' + reason + '.</td></tr>';
+    } else {
+      $('oRec').innerHTML = 'Charge ' + charges[0].charge + ' <small>@ ' + fmtElev(charges[0].elevation) + '</small>';
+      var rows = '';
+      for(var i=0;i<charges.length;i++){
+        var ch = charges[i];
+        var r = tofFor(ch.charge, rb.km, cal, cfg().seedPerKm);
+        var rec = i===0 ? ' rec' : '';
+        var note = i===0 ? '<span class="pill">MIN CHARGE</span>' : (ch.elevation < 20 ? 'flat / fast' : (ch.elevation > 50 ? 'high arc' : ''));
+        rows += '<tr class="'+rec+'"><td>'+ch.charge+'</td><td>'+fmtElev(ch.elevation)+'</td><td>'+fmtTof(r.tof, r.src)+'</td><td class="muted">'+note+'</td></tr>';
+      }
+      $('chargeRows').innerHTML = rows;
+    }
+
+    computeIntercept(gun, tgt);
+  }
+
+  function computeIntercept(gun, tgt){
+    if(!$('moveOn').checked){ return; }
+    var speed = Math.max(0, Number($('spd').value)||0);
+    var hdg = Number($('hdg').value)||0;
+    var rows = '';
+    var any = false;
+    for(var k=1;k<=DEFAULT_SLOPES.length;k++){
+      var sol = solveIntercept(gun, tgt, speed, hdg, k, cfg(), cal);
+      if(!sol.valid) continue;
+      any = true;
+      var estTag = sol.src==='seed' ? ' <span class="pill est">EST</span>' : '';
+      rows += '<tr><td>'+k+'</td><td>'+sol.point+'</td><td>'+fmtBearing(sol.bearing)+'</td><td>'+fmtElev(sol.elevation)+'</td><td>'+sol.t.toFixed(1)+'s'+estTag+'</td></tr>';
+    }
+    $('interRows').innerHTML = any ? rows : '<tr><td colspan="5" class="err">No intercept — target out of range on every charge.</td></tr>';
+  }
+
+  // ---- calibration UI ----
+  function renderCal(){
+    var keys = Object.keys(cal).filter(function(k){ return cal[k] && cal[k].length; }).sort();
+    if(keys.length === 0){
+      $('calList').innerHTML = '<span class="muted">No calibration logged — intercept flight times are estimates.</span>';
+      $('calSummary').textContent = '(using estimates)';
+    } else {
+      var html = '', total=0;
+      for(var i=0;i<keys.length;i++){
+        var k = keys[i], pts = cal[k];
+        total += pts.length;
+        var fit = fitTOF(pts);
+        var eq = fit ? (fit.type==='fit' ? ('t ≈ '+fit.m.toFixed(2)+'·r + '+fit.b.toFixed(1)) : ('t ≈ '+fit.m.toFixed(2)+'·r  (1 pt)')) : '';
+        var chips = pts.map(function(p,idx){
+          return '<button data-c="'+k+'" data-i="'+idx+'" class="calDel" style="padding:2px 8px;font-size:11px;margin:2px 3px 0 0">'+p.range_km+'km→'+p.tof_s+'s ✕</button>';
+        }).join('');
+        html += '<div style="margin-bottom:8px"><b>Charge '+k+'</b> <span class="muted">'+eq+'</span><br>'+chips+'</div>';
+      }
+      $('calList').innerHTML = html;
+      $('calSummary').textContent = '('+total+' points logged)';
+      Array.prototype.forEach.call(document.querySelectorAll('.calDel'), function(btn){
+        btn.onclick = function(){
+          var c = this.getAttribute('data-c'), idx = +this.getAttribute('data-i');
+          cal[c].splice(idx,1); if(!cal[c].length) delete cal[c];
+          saveCal(); renderCal(); compute();
+        };
+      });
+    }
+  }
+
+  $('calAdd').onclick = function(){
+    var c = Math.round(Number($('calC').value));
+    var r = Number($('calR').value), t = Number($('calT').value);
+    if(!(c>=1 && c<=6) || !(r>0) || !(t>0)){ alert('Need charge 1–6, range > 0, flight > 0.'); return; }
+    if(!cal[c]) cal[c] = [];
+    cal[c].push({ range_km:r, tof_s:t });
+    saveCal(); renderCal(); compute();
+  };
+  $('calReset').onclick = function(){
+    if(confirm('Clear all TOF calibration?')){ cal = {}; saveCal(); renderCal(); compute(); }
+  };
+
+  // ---- settings UI ----
+  $('setNorth').checked = settings.northUp;
+  $('setUnit').value = settings.unit;
+  $('setSeed').value = settings.seedPerKm;
+  $('setNorth').onchange = function(){ settings.northUp = this.checked; saveSettings(); compute(); };
+  $('setUnit').onchange = function(){ settings.unit = this.value; saveSettings(); compute(); };
+  $('setSeed').oninput = function(){ settings.seedPerKm = Number(this.value)||3; saveSettings(); compute(); };
+
+  // ---- inputs ----
+  ['gun','tgt','spd','hdg'].forEach(function(id){ $(id).addEventListener('input', compute); });
+  $('moveOn').addEventListener('change', function(){ $('moveBody').style.display = this.checked ? 'block' : 'none'; compute(); });
+  $('swap').onclick = function(){ var a=$('gun').value; $('gun').value=$('tgt').value; $('tgt').value=a; compute(); };
+
+  // ---- self tests ----
+  $('runTests').onclick = function(){
+    var out = [], pass = 0, fail = 0;
+    function ok(name, cond, got){ if(cond){pass++; out.push('✓ '+name);} else {fail++; out.push('✗ '+name+'   got: '+got);} }
+    function near(a,b,e){ return Math.abs(a-b) <= (e||1e-6); }
+
+    // geometry
+    var g = parsePosition('A0-0,0'), t1 = parsePosition('A0-9,0');
+    var rb = rangeBearing(g, t1, true);
+    ok('range A0-0,0→A0-9,0 = 900m', near(rb.meters,900,1e-6), rb.meters);
+    ok('bearing due East = 90°', near(rb.bearing,90,1e-6), rb.bearing);
+    var rbS = rangeBearing(g, parsePosition('A0-0,9'), true);
+    ok('bearing +row (northUp) = South 180°', near(rbS.bearing,180,1e-6), rbS.bearing);
+    var rbD = rangeBearing(g, parsePosition('A0-9,9'), true);
+    ok('bearing SE = 135°', near(rbD.bearing,135,1e-6), rbD.bearing);
+
+    // ballistics vs firing table
+    ok('k3 @10.1km = 40.40°', near(validCharges(10.1)[0].elevation, 40.40, 1e-6), validCharges(10.1)[0].elevation);
+    ok('k5 @20.1km = 48.24°', near(DEFAULT_SLOPES[4]*20.1, 48.24, 1e-6), DEFAULT_SLOPES[4]*20.1);
+    ok('k1 @5km = 60°', near(DEFAULT_SLOPES[0]*5, 60, 1e-9), DEFAULT_SLOPES[0]*5);
+    ok('k6 @30km = 60°', near(DEFAULT_SLOPES[5]*30, 60, 1e-9), DEFAULT_SLOPES[5]*30);
+
+    // valid-charge set @12km
+    var vc = validCharges(12).map(function(x){return x.charge;});
+    ok('valid charges @12km = [3,4,5,6]', vc.join(',')==='3,4,5,6', vc.join(','));
+    ok('recommended @12km = charge 3', validCharges(12)[0].charge===3, validCharges(12)[0].charge);
+    var e12 = validCharges(12).map(function(x){return +x.elevation.toFixed(1);});
+    ok('elevations @12km = 48/36/28.8/24', e12.join(',')==='48,36,28.8,24', e12.join(','));
+    ok('35km = out of range', validCharges(35).length===0, validCharges(35).length);
+
+    // intercept: static target reduces to normal solution
+    var cfgT = { northUp:true, seedPerKm:3, slopes:DEFAULT_SLOPES };
+    var gunI = parsePosition('A0-0,0'), tgtI = parsePosition('F0-0,0'); // col F = 5km east
+    var stat = solveIntercept(gunI, tgtI, 0, 90, 1, cfgT, {});
+    ok('static intercept bearing = 90°', near(stat.bearing,90,1e-4), stat.bearing);
+    ok('static intercept range = 5km', near(stat.range_km,5,1e-4), stat.range_km);
+    ok('static aim point = target', stat.point.indexOf('F0-0.0,0.0')===0, stat.point);
+    // moving away increases range (lead outward)
+    var away = solveIntercept(gunI, tgtI, 20, 90, 3, cfgT, {}); // heading East = away from gun at west
+    ok('target fleeing East → range > 5km', away.range_km > 5, away.range_km);
+    // moving toward gun decreases range
+    var toward = solveIntercept(gunI, tgtI, 20, 270, 3, cfgT, {});
+    ok('target closing West → range < 5km', toward.range_km < 5, toward.range_km);
+
+    // TOF calibration fit
+    var fit = fitTOF([{range_km:10,tof_s:30},{range_km:20,tof_s:50}]);
+    ok('TOF linear fit slope=2, intercept=10', near(fit.m,2,1e-9)&&near(fit.b,10,1e-9), fit.m+'/'+fit.b);
+
+    var head = (fail===0 ? '✅ ALL PASS' : '❌ '+fail+' FAILED') + '   ('+pass+'/'+(pass+fail)+')\n\n';
+    var el = $('testOut'); el.className = fail===0 ? 'good' : 'err';
+    el.textContent = head + out.join('\n');
+  };
+
+  // init
+  renderCal();
+  compute();
+})();
+</script>
+</body>
+</html>
