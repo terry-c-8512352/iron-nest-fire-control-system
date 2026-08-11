@@ -49,9 +49,33 @@ formula already does.)
 
 ## Moving-target intercept
 
-Enable **Moving Target**, then enter the target's **speed (m/s)** and **heading (°)**.
-The target's *current* spot is the Target field; the solver leads it and returns, per
-charge, the aim grid, bearing, elevation, and time-to-impact.
+Enable **Moving Target**. There are two ways to describe the target's motion:
+
+### Two sightings (recommended)
+
+Enter two spotter reports — *"was at **P1** at time **T1**, then at **P2** at time
+**T2**"*. The app derives the target's speed and heading for you, then:
+
+- **Predicts** where it will be: type any time in *"Predict position at time"* and it
+  shows the grid cell plus range/bearing from your gun at that moment.
+- **Solves the intercept**: per charge, the aim-point grid, bearing, elevation, flight
+  time, and the **impact time** ("fire now, shell meets target at 12:00:50").
+
+Times can be plain **seconds** (`0`, `30`) or a **clock** (`12:30:30` / `mm:ss`). If you
+use clock times, the predicted and impact times come back as clock times too. The two
+sighting times must differ; order doesn't matter (it uses the later one as the anchor).
+
+### Speed + heading
+
+If you already know the target's **speed (m/s)** and **heading (°)**, switch to this mode.
+The target's current spot is the top **Target** field, observed at the "Observed at time"
+you give. Everything else (predict, intercept, impact time) works the same.
+
+### Fire-at time
+
+Leave *"Fire at time"* blank to fire **now** (at the latest sighting / observation).
+Set it to fire later — the solver advances the target to that moment first, so the aim
+point and impact time account for the delay.
 
 ⚠️ **Flight times need calibrating.** The firing table has no time-of-flight data, so
 intercept timing starts as a rough **estimate** (marked `EST`). To make it accurate:

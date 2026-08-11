@@ -110,21 +110,45 @@
     <label class="switch small"><input type="checkbox" id="moveOn"> enable</label>
   </div>
   <div id="moveBody" style="display:none;margin-top:12px">
-    <div class="row">
-      <div>
-        <label>Target speed (m/s)</label>
-        <input id="spd" type="number" min="0" step="0.5" value="10" inputmode="decimal">
-      </div>
-      <div>
-        <label>Target heading (° compass)</label>
-        <input id="hdg" type="number" min="0" max="360" step="1" value="270" inputmode="decimal">
-      </div>
+    <div class="row" style="gap:18px;margin-bottom:6px">
+      <label class="switch small" style="flex:0"><input type="radio" name="vsrc" value="track" checked> Two sightings</label>
+      <label class="switch small" style="flex:0"><input type="radio" name="vsrc" value="sh"> Speed + heading</label>
     </div>
-    <div class="hint">Target's current position is the <b>Target</b> field above. It moves on this heading; the solver leads it. Flight-time accuracy depends on TOF calibration below.</div>
+
+    <div id="srcTrack">
+      <div class="grid2">
+        <div><label>Sighting 1 — position</label><input id="s1p" type="text" placeholder="F5-2,3" value="F5-2,3" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+        <div><label>Sighting 1 — time</label><input id="s1t" type="text" placeholder="0  or  12:30:00" value="0" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <div class="grid2" style="margin-top:8px">
+        <div><label>Sighting 2 — position (latest)</label><input id="s2p" type="text" placeholder="H6-8,3" value="H6-8,3" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+        <div><label>Sighting 2 — time</label><input id="s2t" type="text" placeholder="30  or  12:30:30" value="30" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <div class="hint">Two spotter sightings — "was at P1 at T1, then at P2 at T2". Time is plain seconds (<code>0</code>, <code>30</code>) or a clock (<code>12:30:30</code>). Velocity is derived from the two.</div>
+    </div>
+
+    <div id="srcSH" style="display:none">
+      <div class="row">
+        <div><label>Target speed (m/s)</label><input id="spd" type="number" min="0" step="0.5" value="10" inputmode="decimal"></div>
+        <div><label>Heading (° compass)</label><input id="hdg" type="number" min="0" max="360" step="1" value="270" inputmode="decimal"></div>
+        <div><label>Observed at time</label><input id="shT" type="text" value="0" placeholder="0 or clock" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <div class="hint">Target's current position is the <b>Target</b> field at top, observed at this time.</div>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <div><label>Fire at time <span class="muted">(blank = latest sighting)</span></label><input id="fireT" type="text" placeholder="e.g. 45 or 12:31:00" autocomplete="off" spellcheck="false"></div>
+      <div><label>Predict position at time <span class="muted">(optional)</span></label><input id="predT" type="text" placeholder="e.g. 90 or clock" autocomplete="off" spellcheck="false"></div>
+    </div>
+
+    <div id="derived" class="small" style="margin-top:10px;color:var(--accent2)"></div>
+    <div id="predOut" class="small" style="margin-top:6px"></div>
+
     <table style="margin-top:12px">
-      <thead><tr><th>Charge</th><th>Aim point</th><th>Bearing</th><th>Elev</th><th>Impact&nbsp;in</th></tr></thead>
-      <tbody id="interRows"><tr><td colspan="5" class="muted">—</td></tr></tbody>
+      <thead><tr><th>Charge</th><th>Aim point</th><th>Bearing</th><th>Elev</th><th>Fly</th><th>Impact&nbsp;at</th></tr></thead>
+      <tbody id="interRows"><tr><td colspan="6" class="muted">—</td></tr></tbody>
     </table>
+    <div class="hint">Fire <b>now</b> and the shell meets the target at the listed aim point &amp; time. Impact time = fire time + flight time; accuracy needs TOF calibration below.</div>
   </div>
 </div>
 
@@ -202,6 +226,9 @@ function toWorld(p){
 }
 
 function worldToPos(x, y){
+  // Snap sub-millimetre floating-point noise so exact grid lines (and y=0)
+  // don't roll a coordinate into the previous grid (e.g. -1e-14 → row -1, sub 10.0).
+  x = Math.round(x*1e4)/1e4; y = Math.round(y*1e4)/1e4;
   var col = Math.floor(x/1000), row = Math.floor(y/1000);
   var subX = (x - col*1000)/100, subY = (y - row*1000)/100;
   var letter = (col >= 0 && col < 26) ? String.fromCharCode(65+col) : '?';
@@ -287,11 +314,58 @@ function solveIntercept(gun, tgt, speed, headingDeg, charge, cfg, cal){
   return { conv:conv, t:t, range_km:R2, elevation:elev, bearing:bearing, valid:valid, point:worldToPos(fx,fy), src:src };
 }
 
+// ---- Track from two timestamped sightings ----
+// Encode an arbitrary world point as a position object (col/row 0, subgrid carries metres/100)
+function worldToPseudo(x, y){ return { col:0, row:0, subX:x/100, subY:y/100 }; }
+
+// Parse a time as plain seconds ("30", "12.5") or a clock ("mm:ss" / "hh:mm:ss").
+function parseTimeToSeconds(str){
+  if(str == null) return null;
+  var s = String(str).trim();
+  if(s === '') return null;
+  if(s.indexOf(':') >= 0){
+    var parts = s.split(':');
+    var sec = 0;
+    for(var i=0;i<parts.length;i++){
+      var n = parseFloat(parts[i]);
+      if(isNaN(n)) return null;
+      sec = sec*60 + n;
+    }
+    return { sec: sec, isClock: true };
+  }
+  var v = parseFloat(s);
+  if(isNaN(v)) return null;
+  return { sec: v, isClock: false };
+}
+
+function fmtClock(sec){
+  sec = ((sec % 86400) + 86400) % 86400;
+  var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = Math.floor(sec%60);
+  var p = function(n){ return (n<10?'0':'') + n; };
+  return p(h) + ':' + p(m) + ':' + p(s);
+}
+
+// Velocity from sighting p1 (time t1) to p2 (time t2). dt = t2 - t1 (seconds).
+// Returns world velocity components plus the equivalent game speed + compass heading.
+function trackVelocity(p1, p2, dt, northUp){
+  var a = toWorld(p1), b = toWorld(p2);
+  var wvx = (b.x - a.x)/dt, wvy = (b.y - a.y)/dt;
+  var speed = Math.sqrt(wvx*wvx + wvy*wvy);
+  var heading = normDeg(Math.atan2(wvx, northUp ? -wvy : wvy) * 180/Math.PI);
+  return { speed: speed, heading: heading, wvx: wvx, wvy: wvy };
+}
+
+// World position of a track at time t, given anchor (world) observed at time t0.
+function posAt(anchorWorld, wvx, wvy, t, t0){
+  return { x: anchorWorld.x + wvx*(t - t0), y: anchorWorld.y + wvy*(t - t0) };
+}
+
 if (typeof module !== 'undefined' && module.exports){
   module.exports = { DEFAULT_SLOPES:DEFAULT_SLOPES, ELEV_CAP:ELEV_CAP, BAND_KM:BAND_KM,
     parsePosition:parsePosition, toWorld:toWorld, worldToPos:worldToPos, rangeBearing:rangeBearing,
     validCharges:validCharges, maxRange:maxRange, tofSeed:tofSeed, fitTOF:fitTOF, tofFor:tofFor,
-    solveIntercept:solveIntercept, normDeg:normDeg };
+    solveIntercept:solveIntercept, normDeg:normDeg, worldToPseudo:worldToPseudo,
+    parseTimeToSeconds:parseTimeToSeconds, fmtClock:fmtClock, trackVelocity:trackVelocity, posAt:posAt };
 }
 // ==FCS_CORE_END==
 
@@ -322,6 +396,14 @@ if (typeof module !== 'undefined' && module.exports){
     return t.toFixed(1) + 's' + tag;
   }
 
+  function fmtT(sec, isClock){ return isClock ? fmtClock(sec) : (String(+sec.toFixed(1)) + 's'); }
+  function rbFromWorld(gun, pw){
+    var g = toWorld(gun), dx = pw.x-g.x, dyw = pw.y-g.y;
+    var dN = settings.northUp ? -dyw : dyw;
+    return { km: Math.sqrt(dx*dx+dyw*dyw)/1000, bearing: normDeg(Math.atan2(dx, dN)*180/Math.PI) };
+  }
+  function currentMode(){ var r = document.querySelector('input[name=vsrc]:checked'); return r ? r.value : 'track'; }
+
   // ---- main recompute ----
   function compute(){
     var gunS = $('gun').value, tgtS = $('tgt').value;
@@ -330,55 +412,114 @@ if (typeof module !== 'undefined' && module.exports){
     $('tgt').classList.toggle('bad', tgtS.trim()!=='' && !tgt);
 
     var err = $('posErr');
+    err.style.display = ((gunS.trim() && !gun) || (tgtS.trim() && !tgt)) ? 'block' : 'none';
+    err.textContent = 'Check position format — e.g. F5-3,4  (Col A–T, Row 0–10, subgrid 0–9).';
+
+    // ---- static solution (needs gun + target) ----
     if(!gun || !tgt){
-      err.style.display = (gunS.trim() && !gun) || (tgtS.trim() && !tgt) ? 'block' : 'none';
-      err.textContent = 'Check position format — e.g. F5-3,4  (Col A–T, Row 0–10, subgrid 0–9).';
       $('oRange').textContent = $('oBearing').textContent = $('oRec').textContent = '—';
-      $('chargeRows').innerHTML = '<tr><td colspan="4" class="muted">Enter valid positions…</td></tr>';
-      $('interRows').innerHTML = '<tr><td colspan="5" class="muted">—</td></tr>';
-      return;
-    }
-    err.style.display = 'none';
-
-    var rb = rangeBearing(gun, tgt, settings.northUp);
-    $('oRange').innerHTML = rb.km.toFixed(2) + ' <small>km</small>';
-    $('oBearing').innerHTML = fmtBearing(rb.bearing);
-
-    var charges = validCharges(rb.km, DEFAULT_SLOPES);
-    if(charges.length === 0){
-      $('oRec').innerHTML = '<small class="err">out of range</small>';
-      var reason = rb.km <= 0 ? 'same position' : ('range ' + rb.km.toFixed(2) + ' km &gt; max ' + maxRange() + ' km');
-      $('chargeRows').innerHTML = '<tr><td colspan="4" class="err">No solution — ' + reason + '.</td></tr>';
+      $('chargeRows').innerHTML = '<tr><td colspan="4" class="muted">Enter valid gun + target…</td></tr>';
     } else {
-      $('oRec').innerHTML = 'Charge ' + charges[0].charge + ' <small>@ ' + fmtElev(charges[0].elevation) + '</small>';
-      var rows = '';
-      for(var i=0;i<charges.length;i++){
-        var ch = charges[i];
-        var r = tofFor(ch.charge, rb.km, cal, cfg().seedPerKm);
-        var rec = i===0 ? ' rec' : '';
-        var note = i===0 ? '<span class="pill">MIN CHARGE</span>' : (ch.elevation < 20 ? 'flat / fast' : (ch.elevation > 50 ? 'high arc' : ''));
-        rows += '<tr class="'+rec+'"><td>'+ch.charge+'</td><td>'+fmtElev(ch.elevation)+'</td><td>'+fmtTof(r.tof, r.src)+'</td><td class="muted">'+note+'</td></tr>';
+      var rb = rangeBearing(gun, tgt, settings.northUp);
+      $('oRange').innerHTML = rb.km.toFixed(2) + ' <small>km</small>';
+      $('oBearing').innerHTML = fmtBearing(rb.bearing);
+      var charges = validCharges(rb.km, DEFAULT_SLOPES);
+      if(charges.length === 0){
+        $('oRec').innerHTML = '<small class="err">out of range</small>';
+        var reason = rb.km <= 0 ? 'same position' : ('range ' + rb.km.toFixed(2) + ' km &gt; max ' + maxRange() + ' km');
+        $('chargeRows').innerHTML = '<tr><td colspan="4" class="err">No solution — ' + reason + '.</td></tr>';
+      } else {
+        $('oRec').innerHTML = 'Charge ' + charges[0].charge + ' <small>@ ' + fmtElev(charges[0].elevation) + '</small>';
+        var rows = '';
+        for(var i=0;i<charges.length;i++){
+          var ch = charges[i];
+          var r = tofFor(ch.charge, rb.km, cal, cfg().seedPerKm);
+          var rec = i===0 ? ' rec' : '';
+          var note = i===0 ? '<span class="pill">MIN CHARGE</span>' : (ch.elevation < 20 ? 'flat / fast' : (ch.elevation > 50 ? 'high arc' : ''));
+          rows += '<tr class="'+rec+'"><td>'+ch.charge+'</td><td>'+fmtElev(ch.elevation)+'</td><td>'+fmtTof(r.tof, r.src)+'</td><td class="muted">'+note+'</td></tr>';
+        }
+        $('chargeRows').innerHTML = rows;
       }
-      $('chargeRows').innerHTML = rows;
     }
 
-    computeIntercept(gun, tgt);
+    // ---- moving-target intercept (needs gun; target source depends on mode) ----
+    if($('moveOn').checked){
+      if(!gun){
+        $('derived').textContent = $('predOut').textContent = '';
+        $('interRows').innerHTML = '<tr><td colspan="6" class="err">Enter a valid gun position.</td></tr>';
+      } else {
+        computeIntercept(gun, tgt);
+      }
+    }
   }
 
   function computeIntercept(gun, tgt){
-    if(!$('moveOn').checked){ return; }
-    var speed = Math.max(0, Number($('spd').value)||0);
-    var hdg = Number($('hdg').value)||0;
-    var rows = '';
-    var any = false;
+    var mode = currentMode();
+    var anchor, t0, vel, isClock = false, err = '';
+
+    if(mode === 'track'){
+      var p1 = parsePosition($('s1p').value), p2 = parsePosition($('s2p').value);
+      var t1 = parseTimeToSeconds($('s1t').value), t2 = parseTimeToSeconds($('s2t').value);
+      $('s1p').classList.toggle('bad', $('s1p').value.trim()!=='' && !p1);
+      $('s2p').classList.toggle('bad', $('s2p').value.trim()!=='' && !p2);
+      if(!p1 || !p2 || !t1 || !t2) err = 'Enter both sightings — position and time for each.';
+      else if(t1.sec === t2.sec) err = 'The two sighting times must differ.';
+      else {
+        // ensure p2/t2 is the later sighting so extrapolation runs forward
+        var a=p1, b=p2, ta=t1.sec, tb=t2.sec;
+        if(tb < ta){ a=p2; b=p1; ta=t2.sec; tb=t1.sec; }
+        isClock = t1.isClock || t2.isClock;
+        vel = trackVelocity(a, b, tb-ta, settings.northUp);
+        anchor = toWorld(b); t0 = tb;
+      }
+    } else {
+      if(!tgt) err = 'Set a valid Target position (top) — it is the current target location.';
+      else {
+        var spd = Math.max(0, Number($('spd').value)||0), hdg = Number($('hdg').value)||0;
+        var to = parseTimeToSeconds($('shT').value) || { sec:0, isClock:false };
+        isClock = to.isClock;
+        var br = hdg*Math.PI/180, vE = spd*Math.sin(br), vN = spd*Math.cos(br);
+        vel = { speed: spd, heading: normDeg(hdg), wvx: vE, wvy: settings.northUp ? -vN : vN };
+        anchor = toWorld(tgt); t0 = to.sec;
+      }
+    }
+
+    if(err){
+      $('derived').textContent = $('predOut').textContent = '';
+      $('interRows').innerHTML = '<tr><td colspan="6" class="err">'+err+'</td></tr>';
+      return;
+    }
+
+    $('derived').innerHTML = 'Track: <b>'+vel.speed.toFixed(1)+' m/s</b> on heading <b>'+fmtBearing(vel.heading)+'</b>'+
+      (vel.speed < 1e-6 ? ' <span class="muted">(stationary)</span>' : '');
+
+    // fire time (blank = anchor time)
+    var fireP = parseTimeToSeconds($('fireT').value);
+    var tFire = fireP ? fireP.sec : t0;
+
+    // predict-at readout
+    var predP = parseTimeToSeconds($('predT').value);
+    if(predP){
+      var pw = posAt(anchor, vel.wvx, vel.wvy, predP.sec, t0);
+      var prb = rbFromWorld(gun, pw);
+      $('predOut').innerHTML = 'At <b>'+fmtT(predP.sec, isClock)+'</b> the target is at <b>'+worldToPos(pw.x, pw.y)+
+        '</b> — '+prb.km.toFixed(2)+' km, '+fmtBearing(prb.bearing)+' from gun.';
+    } else $('predOut').textContent = '';
+
+    // intercept per charge, firing at tFire
+    var firePos = posAt(anchor, vel.wvx, vel.wvy, tFire, t0);
+    var pseudo = worldToPseudo(firePos.x, firePos.y);
+    var out = '', any = false;
     for(var k=1;k<=DEFAULT_SLOPES.length;k++){
-      var sol = solveIntercept(gun, tgt, speed, hdg, k, cfg(), cal);
+      var sol = solveIntercept(gun, pseudo, vel.speed, vel.heading, k, cfg(), cal);
       if(!sol.valid) continue;
       any = true;
-      var estTag = sol.src==='seed' ? ' <span class="pill est">EST</span>' : '';
-      rows += '<tr><td>'+k+'</td><td>'+sol.point+'</td><td>'+fmtBearing(sol.bearing)+'</td><td>'+fmtElev(sol.elevation)+'</td><td>'+sol.t.toFixed(1)+'s'+estTag+'</td></tr>';
+      var impact = tFire + sol.t;
+      var est = sol.src==='seed' ? ' <span class="pill est">EST</span>' : '';
+      out += '<tr><td>'+k+'</td><td>'+sol.point+'</td><td>'+fmtBearing(sol.bearing)+'</td><td>'+fmtElev(sol.elevation)+
+             '</td><td>'+sol.t.toFixed(1)+'s</td><td>'+fmtT(impact, isClock)+est+'</td></tr>';
     }
-    $('interRows').innerHTML = any ? rows : '<tr><td colspan="5" class="err">No intercept — target out of range on every charge.</td></tr>';
+    $('interRows').innerHTML = any ? out : '<tr><td colspan="6" class="err">No intercept — target out of range on every charge at fire time.</td></tr>';
   }
 
   // ---- calibration UI ----
@@ -432,8 +573,17 @@ if (typeof module !== 'undefined' && module.exports){
   $('setSeed').oninput = function(){ settings.seedPerKm = Number(this.value)||3; saveSettings(); compute(); };
 
   // ---- inputs ----
-  ['gun','tgt','spd','hdg'].forEach(function(id){ $(id).addEventListener('input', compute); });
+  ['gun','tgt','spd','hdg','s1p','s1t','s2p','s2t','shT','fireT','predT'].forEach(function(id){
+    var e = $(id); if(e) e.addEventListener('input', compute);
+  });
   $('moveOn').addEventListener('change', function(){ $('moveBody').style.display = this.checked ? 'block' : 'none'; compute(); });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=vsrc]'), function(r){
+    r.addEventListener('change', function(){
+      $('srcTrack').style.display = currentMode()==='track' ? 'block' : 'none';
+      $('srcSH').style.display    = currentMode()==='sh'    ? 'block' : 'none';
+      compute();
+    });
+  });
   $('swap').onclick = function(){ var a=$('gun').value; $('gun').value=$('tgt').value; $('tgt').value=a; compute(); };
 
   // ---- self tests ----
@@ -483,6 +633,21 @@ if (typeof module !== 'undefined' && module.exports){
     // TOF calibration fit
     var fit = fitTOF([{range_km:10,tof_s:30},{range_km:20,tof_s:50}]);
     ok('TOF linear fit slope=2, intercept=10', near(fit.m,2,1e-9)&&near(fit.b,10,1e-9), fit.m+'/'+fit.b);
+
+    // two-sighting track
+    var ts = trackVelocity(parsePosition('A0-0,0'), parsePosition('A0-9,0'), 90, true);
+    ok('track speed = 10 m/s', near(ts.speed,10,1e-9), ts.speed);
+    ok('track heading due East = 90°', near(ts.heading,90,1e-9), ts.heading);
+    var pw = posAt({x:900,y:0}, ts.wvx, ts.wvy, 180, 90);
+    ok('posAt(t=180) → 1800m East', near(pw.x,1800,1e-9)&&near(pw.y,0,1e-9), pw.x+','+pw.y);
+    ok('worldToPos(1800,0) = B0-8.0,0.0', worldToPos(1800,0)==='B0-8.0,0.0', worldToPos(1800,0));
+    var tt = parseTimeToSeconds('12:30:30');
+    ok('parseTime 12:30:30 = 45030s clock', tt.sec===45030 && tt.isClock===true, tt&&tt.sec);
+    var ts2 = parseTimeToSeconds('45');
+    ok('parseTime "45" = 45s (not clock)', ts2.sec===45 && ts2.isClock===false, ts2&&ts2.sec);
+    ok('fmtClock(45030) = 12:30:30', fmtClock(45030)==='12:30:30', fmtClock(45030));
+    var pseudo = worldToPseudo(10100,7800);
+    ok('worldToPseudo round-trips', toWorld(pseudo).x===10100 && toWorld(pseudo).y===7800, JSON.stringify(toWorld(pseudo)));
 
     var head = (fail===0 ? '✅ ALL PASS' : '❌ '+fail+' FAILED') + '   ('+pass+'/'+(pass+fail)+')\n\n';
     var el = $('testOut'); el.className = fail===0 ? 'good' : 'err';
