@@ -81,7 +81,7 @@
   .gunblock:last-child{margin-bottom:0}
   .gbhead{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px}
   .dot{width:11px;height:11px;border-radius:50%;display:inline-block;flex:0 0 auto}
-  #placeGunB.on{background:#b07cff;color:#12071f;font-weight:600}
+  #placeTgtB.on{background:#b07cff;color:#12071f;font-weight:600}
   .reflist-item{display:flex;align-items:center;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0}
   .reflist-item .meta{min-width:0;overflow:hidden}
   .reflist-item .nm{font-weight:600}
@@ -98,9 +98,9 @@
   <div class="mapwrap">
     <div class="maptools">
       <div class="seg" role="group" aria-label="Which marker to place">
-        <button id="placeGun" class="on" type="button">◎ Gun A</button>
-        <button id="placeGunB" type="button" style="display:none">◎ Gun B</button>
-        <button id="placeTgt" type="button">◎ Target</button>
+        <button id="placeGun" class="on" type="button">◎ Gun</button>
+        <button id="placeTgt" type="button">◎ Target A</button>
+        <button id="placeTgtB" type="button" style="display:none">◎ Target B</button>
       </div>
       <span class="tag">tap map to place · drag marker to nudge · wheel / pinch to zoom</span>
       <div class="seg">
@@ -111,19 +111,19 @@
     </div>
     <canvas id="map"></canvas>
   </div>
-  <label class="switch small" style="margin-bottom:8px"><input type="checkbox" id="gunBOn"> Second gun — compare trajectories from two positions</label>
+  <label class="switch small" style="margin-bottom:8px"><input type="checkbox" id="tgtBOn"> Second target — fire two shells at two targets from one gun</label>
   <div class="grid2">
     <div>
-      <label>Gun A position</label>
+      <label>Gun position</label>
       <input id="gun" type="text" inputmode="text" placeholder="e.g. F5-3,4" value="F5-5,5" autocomplete="off" autocapitalize="characters" spellcheck="false">
     </div>
-    <div id="gunBWrap" style="display:none">
-      <label>Gun B position</label>
-      <input id="gunB" type="text" inputmode="text" placeholder="e.g. C4-2,2" value="C4-2,2" autocomplete="off" autocapitalize="characters" spellcheck="false">
-    </div>
     <div>
-      <label>Target position</label>
+      <label>Target A position</label>
       <input id="tgt" type="text" inputmode="text" placeholder="e.g. K7-1,8" value="K7-1,8" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div id="tgtBWrap" style="display:none">
+      <label>Target B position</label>
+      <input id="tgtB" type="text" inputmode="text" placeholder="e.g. M8-4,4" value="M8-4,4" autocomplete="off" autocapitalize="characters" spellcheck="false">
     </div>
   </div>
   <div class="hint">Format <code>&lt;Col&gt;&lt;Row&gt;-&lt;subX&gt;,&lt;subY&gt;</code> — Col A–T, Row 0–10, subgrid 0–9 (100&nbsp;m). Decimals ok: <code>F5-3.5,4.2</code>. <button id="swap" style="padding:3px 9px;font-size:12px;margin-left:6px">⇄ swap</button></div>
@@ -141,11 +141,6 @@
     <label class="switch small"><input type="checkbox" id="moveOn"> enable</label>
   </div>
   <div id="moveBody" style="display:none;margin-top:12px">
-    <div id="igunSel" class="row" style="gap:18px;margin-bottom:8px;display:none">
-      <span class="tag" style="align-self:center">Intercept from:</span>
-      <label class="switch small" style="flex:0"><input type="radio" name="igun" value="gun" checked> Gun A</label>
-      <label class="switch small" style="flex:0"><input type="radio" name="igun" value="gunB"> Gun B</label>
-    </div>
     <div class="row" style="gap:18px;margin-bottom:6px">
       <label class="switch small" style="flex:0"><input type="radio" name="vsrc" value="track" checked> Two sightings</label>
       <label class="switch small" style="flex:0"><input type="radio" name="vsrc" value="sh"> Speed + heading</label>
@@ -169,7 +164,7 @@
         <div><label>Heading (° compass)</label><input id="hdg" type="number" min="0" max="360" step="1" value="270" inputmode="decimal"></div>
         <div><label>Observed at time</label><input id="shT" type="text" value="0" placeholder="0 or clock" autocomplete="off" spellcheck="false"></div>
       </div>
-      <div class="hint">Target's current position is the <b>Target</b> field at top, observed at this time.</div>
+      <div class="hint">Target's current position is the <b>Target A</b> field at top, observed at this time.</div>
     </div>
 
     <div class="row" style="margin-top:12px">
@@ -426,7 +421,7 @@ if (typeof module !== 'undefined' && module.exports){
 
   var settings = { northUp:true, unit:'deg', seedPerKm:3 };
   var cal = {}; // { charge: [ {range_km, tof_s} ] }
-  var refs = []; // [ {name, gun, gunB, tgt, ts} ]
+  var refs = []; // [ {name, gun, tgt, tgtB, ts} ]
 
   try { var s = JSON.parse(localStorage.getItem(LS_SET)); if(s) settings = Object.assign(settings, s); } catch(e){}
   try { var c = JSON.parse(localStorage.getItem(LS_CAL)); if(c) cal = c; } catch(e){}
@@ -435,7 +430,7 @@ if (typeof module !== 'undefined' && module.exports){
   function saveSettings(){ try{ localStorage.setItem(LS_SET, JSON.stringify(settings)); }catch(e){} }
   function saveCal(){ try{ localStorage.setItem(LS_CAL, JSON.stringify(cal)); }catch(e){} }
   function saveRefs(){ try{ localStorage.setItem(LS_REFS, JSON.stringify(refs)); }catch(e){} }
-  function gunBOn(){ return !!($('gunBOn') && $('gunBOn').checked); }
+  function tgtBOn(){ return !!($('tgtBOn') && $('tgtBOn').checked); }
   function cfg(){ return { northUp:settings.northUp, seedPerKm:Number(settings.seedPerKm)||3, slopes:DEFAULT_SLOPES }; }
 
   function fmtBearing(deg){
@@ -461,7 +456,7 @@ if (typeof module !== 'undefined' && module.exports){
   function tile(k,v){ return '<div class="tile"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>'; }
 
   function buildSolutionBlock(gunPos, tgt, glabel, color){
-    var head = '<div class="gbhead"><span class="dot" style="background:'+color+'"></span>'+glabel+' → Target</div>';
+    var head = '<div class="gbhead"><span class="dot" style="background:'+color+'"></span>Gun → '+glabel+'</div>';
     var rb = rangeBearing(gunPos, tgt, settings.northUp);
     var charges = validCharges(rb.km, DEFAULT_SLOPES);
     var tiles, table;
@@ -485,40 +480,37 @@ if (typeof module !== 'undefined' && module.exports){
   }
 
   function compute(){
-    var gunS = $('gun').value, tgtS = $('tgt').value, gunBS = $('gunB') ? $('gunB').value : '';
-    var gun = parsePosition(gunS), tgt = parsePosition(tgtS), gunB = parsePosition(gunBS);
-    var bOn = gunBOn();
+    var gunS = $('gun').value, tgtS = $('tgt').value, tgtBS = $('tgtB') ? $('tgtB').value : '';
+    var gun = parsePosition(gunS), tgt = parsePosition(tgtS), tgtB = parsePosition(tgtBS);
+    var bOn = tgtBOn();
     $('gun').classList.toggle('bad', gunS.trim()!=='' && !gun);
     $('tgt').classList.toggle('bad', tgtS.trim()!=='' && !tgt);
-    if($('gunB')) $('gunB').classList.toggle('bad', bOn && gunBS.trim()!=='' && !gunB);
+    if($('tgtB')) $('tgtB').classList.toggle('bad', bOn && tgtBS.trim()!=='' && !tgtB);
 
     var err = $('posErr');
-    err.style.display = ((gunS.trim() && !gun) || (tgtS.trim() && !tgt) || (bOn && gunBS.trim() && !gunB)) ? 'block' : 'none';
+    err.style.display = ((gunS.trim() && !gun) || (tgtS.trim() && !tgt) || (bOn && tgtBS.trim() && !tgtB)) ? 'block' : 'none';
     err.textContent = 'Check position format — e.g. F5-3,4  (Col A–T, Row 0–10, subgrid 0–9).';
 
-    // ---- static solution block(s) ----
-    if(!tgt){
-      $('solBlocks').innerHTML = '<div class="gunblock"><span class="muted">Enter a valid target…</span></div>';
+    // ---- static solution: one gun → one or two targets ----
+    if(!gun){
+      $('solBlocks').innerHTML = '<div class="gunblock"><span class="muted">Enter a valid gun position…</span></div>';
     } else {
-      var html = gun ? buildSolutionBlock(gun, tgt, bOn?'Gun A':'Gun', COLOR_A)
-                     : '<div class="gunblock"><div class="gbhead"><span class="dot" style="background:'+COLOR_A+'"></span>Gun A → Target</div><span class="muted">Enter a valid Gun A…</span></div>';
+      var html = tgt ? buildSolutionBlock(gun, tgt, bOn?'Target A':'Target', COLOR_T)
+                     : '<div class="gunblock"><div class="gbhead"><span class="dot" style="background:'+COLOR_T+'"></span>Gun → Target A</div><span class="muted">Enter a valid Target A…</span></div>';
       if(bOn){
-        html += gunB ? buildSolutionBlock(gunB, tgt, 'Gun B', COLOR_B)
-                     : '<div class="gunblock"><div class="gbhead"><span class="dot" style="background:'+COLOR_B+'"></span>Gun B → Target</div><span class="muted">Enter a valid Gun B…</span></div>';
+        html += tgtB ? buildSolutionBlock(gun, tgtB, 'Target B', COLOR_B)
+                     : '<div class="gunblock"><div class="gbhead"><span class="dot" style="background:'+COLOR_B+'"></span>Gun → Target B</div><span class="muted">Enter a valid Target B…</span></div>';
       }
       $('solBlocks').innerHTML = html;
     }
 
-    // ---- moving-target intercept (from the selected gun) ----
+    // ---- moving-target intercept (single gun; speed+heading mode uses Target A) ----
     if($('moveOn').checked){
-      var sel = document.querySelector('input[name=igun]:checked');
-      var useB = bOn && sel && sel.value === 'gunB';
-      var igun = useB ? gunB : gun, iname = useB ? 'Gun B' : 'Gun A';
-      if(!igun){
+      if(!gun){
         $('derived').textContent = $('predOut').textContent = '';
-        $('interRows').innerHTML = '<tr><td colspan="6" class="err">Enter a valid '+iname+' position.</td></tr>';
+        $('interRows').innerHTML = '<tr><td colspan="6" class="err">Enter a valid gun position.</td></tr>';
       } else {
-        computeIntercept(igun, tgt);
+        computeIntercept(gun, tgt);
       }
     }
 
@@ -645,24 +637,19 @@ if (typeof module !== 'undefined' && module.exports){
   $('setSeed').oninput = function(){ settings.seedPerKm = Number(this.value)||3; saveSettings(); compute(); };
 
   // ---- inputs ----
-  ['gun','gunB','tgt','spd','hdg','s1p','s1t','s2p','s2t','shT','fireT','predT'].forEach(function(id){
+  ['gun','tgt','tgtB','spd','hdg','s1p','s1t','s2p','s2t','shT','fireT','predT'].forEach(function(id){
     var e = $(id); if(e) e.addEventListener('input', compute);
   });
   $('moveOn').addEventListener('change', function(){ $('moveBody').style.display = this.checked ? 'block' : 'none'; compute(); });
 
-  // ---- second gun ----
-  function syncGunB(){
-    var on = gunBOn();
-    if($('gunBWrap')) $('gunBWrap').style.display = on ? '' : 'none';
-    if($('placeGunB')) $('placeGunB').style.display = on ? '' : 'none';
-    if($('igunSel')) $('igunSel').style.display = on ? 'flex' : 'none';
-    if(!on){
-      if(placing==='gunB') setPlacing('gun');
-      var a = document.querySelector('input[name=igun][value=gun]'); if(a) a.checked = true;
-    }
+  // ---- second target ----
+  function syncTgtB(){
+    var on = tgtBOn();
+    if($('tgtBWrap')) $('tgtBWrap').style.display = on ? '' : 'none';
+    if($('placeTgtB')) $('placeTgtB').style.display = on ? '' : 'none';
+    if(!on && placing==='tgtB') setPlacing('tgt');
   }
-  if($('gunBOn')) $('gunBOn').addEventListener('change', function(){ syncGunB(); compute(); });
-  Array.prototype.forEach.call(document.querySelectorAll('input[name=igun]'), function(r){ r.addEventListener('change', compute); });
+  if($('tgtBOn')) $('tgtBOn').addEventListener('change', function(){ syncTgtB(); compute(); });
 
   // ---- saved references ----
   function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -678,7 +665,7 @@ if (typeof module !== 'undefined' && module.exports){
     if($('refSummary')) $('refSummary').textContent='('+refs.length+')';
     var html='';
     for(var i=0;i<refs.length;i++){
-      var ref=refs[i], gb = ref.gunB ? ' <span class="muted">· +B '+esc(ref.gunB)+'</span>' : '';
+      var ref=refs[i], gb = ref.tgtB ? ' <span class="muted">· +T-B '+esc(ref.tgtB)+'</span>' : '';
       html+='<div class="reflist-item"><div class="meta"><div class="nm">'+esc(ref.name)+'</div>'+
         '<div class="sub2">'+esc(refSummaryText(ref))+gb+'</div></div>'+
         '<div class="acts"><button data-i="'+i+'" class="refLoad primary" style="padding:5px 10px">Load</button>'+
@@ -692,17 +679,17 @@ if (typeof module !== 'undefined' && module.exports){
     var ref=refs[i]; if(!ref) return;
     $('gun').value = ref.gun || '';
     $('tgt').value = ref.tgt || '';
-    if($('gunBOn')){ $('gunBOn').checked = !!ref.gunB; }
-    if(ref.gunB && $('gunB')) $('gunB').value = ref.gunB;
-    syncGunB();
+    if($('tgtBOn')){ $('tgtBOn').checked = !!ref.tgtB; }
+    if(ref.tgtB && $('tgtB')) $('tgtB').value = ref.tgtB;
+    syncTgtB();
     compute();
     if(typeof window !== 'undefined' && window.scrollTo){ try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); } }
   }
   if($('refSave')) $('refSave').onclick = function(){
     var t = $('tgt').value.trim();
-    if(!parsePosition(t)){ alert('Set a valid Target before saving a reference.'); return; }
+    if(!parsePosition(t)){ alert('Set a valid Target A before saving a reference.'); return; }
     var name = ($('refName').value || '').trim() || ('Target '+t);
-    refs.unshift({ name:name, gun:$('gun').value.trim(), gunB: (gunBOn() && $('gunB')) ? $('gunB').value.trim() : '', tgt:t, ts:Date.now() });
+    refs.unshift({ name:name, gun:$('gun').value.trim(), tgt:t, tgtB: (tgtBOn() && $('tgtB')) ? $('tgtB').value.trim() : '', ts:Date.now() });
     saveRefs(); $('refName').value=''; renderRefs();
   };
   Array.prototype.forEach.call(document.querySelectorAll('input[name=vsrc]'), function(r){
@@ -873,20 +860,20 @@ if (typeof module !== 'undefined' && module.exports){
     }
 
     var gun=parsePosition($('gun').value), tgt=parsePosition($('tgt').value);
-    var bOn=gunBOn(), gunB=(bOn&&$('gunB'))?parsePosition($('gunB').value):null;
-    function fireLine(gp, col){
-      var gw=toWorld(gp), tw=toWorld(tgt), gs=w2s(gw.x,gw.y), tsx=w2s(tw.x,tw.y);
+    var bOn=tgtBOn(), tgtB=(bOn&&$('tgtB'))?parsePosition($('tgtB').value):null;
+    function fireLine(targetPos, col){
+      var gw=toWorld(gun), tw=toWorld(targetPos), gs=w2s(gw.x,gw.y), tsx=w2s(tw.x,tw.y);
       ctx.strokeStyle=col; ctx.globalAlpha=0.6; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
       ctx.beginPath(); ctx.moveTo(gs.x,gs.y); ctx.lineTo(tsx.x,tsx.y); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha=1;
-      var rb=rangeBearing(gp,tgt,settings.northUp);
+      var rb=rangeBearing(gun,targetPos,settings.northUp);
       labelChip((gs.x+tsx.x)/2,(gs.y+tsx.y)/2, rb.km.toFixed(2)+'km · '+fmtBearing(rb.bearing));
     }
-    if(gun&&tgt) fireLine(gun, COLOR_A);
-    if(gunB&&tgt) fireLine(gunB, COLOR_B);
-    if(gun) drawMarker(toWorld(gun), COLOR_A, bOn?'A':'GUN');
-    if(gunB) drawMarker(toWorld(gunB), COLOR_B, 'B');
-    if(tgt) drawMarker(toWorld(tgt), COLOR_T, 'TGT');
+    if(gun&&tgt) fireLine(tgt, COLOR_T);
+    if(gun&&tgtB) fireLine(tgtB, COLOR_B);
+    if(gun) drawMarker(toWorld(gun), COLOR_A, 'GUN');
+    if(tgt) drawMarker(toWorld(tgt), COLOR_T, bOn?'T-A':'TGT');
+    if(tgtB) drawMarker(toWorld(tgtB), COLOR_B, 'T-B');
   }
 
   function setCoord(which, wx, wy){
@@ -900,14 +887,13 @@ if (typeof module !== 'undefined' && module.exports){
   function setPlacing(which){
     placing=which;
     if($('placeGun'))$('placeGun').classList.toggle('on',which==='gun');
-    if($('placeGunB'))$('placeGunB').classList.toggle('on',which==='gunB');
     if($('placeTgt'))$('placeTgt').classList.toggle('on',which==='tgt');
+    if($('placeTgtB'))$('placeTgtB').classList.toggle('on',which==='tgtB');
   }
   function hitMarker(sx,sy){
     var best=null,bd=16;
-    var cand=[['gun',$('gun').value]];
-    if(gunBOn() && $('gunB')) cand.push(['gunB',$('gunB').value]);
-    cand.push(['tgt',$('tgt').value]);
+    var cand=[['gun',$('gun').value],['tgt',$('tgt').value]];
+    if(tgtBOn() && $('tgtB')) cand.push(['tgtB',$('tgtB').value]);
     for(var i=0;i<cand.length;i++){ var p=parsePosition(cand[i][1]); if(!p) continue;
       var d=dist(w2s(toWorld(p).x,toWorld(p).y),{x:sx,y:sy}); if(d<bd){bd=d;best=cand[i][0];} }
     return best;
@@ -915,8 +901,8 @@ if (typeof module !== 'undefined' && module.exports){
 
   if(canvas){
     $('placeGun').onclick=function(){ setPlacing('gun'); };
-    if($('placeGunB')) $('placeGunB').onclick=function(){ setPlacing('gunB'); };
     $('placeTgt').onclick=function(){ setPlacing('tgt'); };
+    if($('placeTgtB')) $('placeTgtB').onclick=function(){ setPlacing('tgtB'); };
     $('zoomIn').onclick=function(){ zoomTo(view.scale*1.4, canvas.clientWidth/2, canvasH()/2); };
     $('zoomOut').onclick=function(){ zoomTo(view.scale/1.4, canvas.clientWidth/2, canvasH()/2); };
     $('zoomFit').onclick=function(){ fitView(); };
@@ -946,8 +932,8 @@ if (typeof module !== 'undefined' && module.exports){
       if(Object.keys(pointers).length<2) pinch=null;
       dragState=null;
       if(!wasMoved && ds && ds.type==='pan'){ var w=s2w(e.offsetX,e.offsetY); setCoord(placing,w.x,w.y);
-        if(placing==='gun') setPlacing(gunBOn()?'gunB':'tgt');
-        else if(placing==='gunB') setPlacing('tgt'); }
+        if(placing==='gun') setPlacing('tgt');
+        else if(placing==='tgt' && tgtBOn()) setPlacing('tgtB'); }
       else if(!wasMoved && ds && ds.type==='marker'){ setPlacing(ds.which); }
     }
     canvas.addEventListener('pointerup', endPtr);
@@ -959,7 +945,7 @@ if (typeof module !== 'undefined' && module.exports){
   }
 
   // init
-  syncGunB();
+  syncTgtB();
   renderCal();
   renderRefs();
   compute();

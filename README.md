@@ -42,29 +42,29 @@ range and bearing live.
 
 Examples: `F5-5,5`, `K7-1,8`, `A0-0,0`.
 
-## Two guns (compare trajectories)
+## Two targets (two shells from one gun)
 
-Tick **Second gun** in Positions to add **Gun B**. You then get a firing solution block for
-**each gun → the same target**, side by side (Gun A in blue, Gun B in purple, Target in
-orange), so you can pick whichever gun has the better charge/elevation or shorter flight.
+Tick **Second target** in Positions to add **Target B**. You then get a firing solution
+block for the **one gun → each target** — Target A and Target B — so you can lay in two
+shots at two targets back-to-back. The gun is blue; Target A is orange, Target B purple,
+each with its own coloured line and live range/bearing on the map.
 
-- On the map there's now a **Place Gun A / Gun B / Target** selector; tapping empty space
-  cycles A → B → Target. Each gun draws its own coloured line to the target with live
-  range/bearing.
-- For **moving-target intercept**, an **Intercept from: Gun A / Gun B** selector appears —
-  the intercept is solved from whichever gun you pick.
-- Untick Second gun to go back to a single gun.
+- The map's place selector is **Gun / Target A / Target B**; tapping empty space cycles
+  Gun → Target A → Target B, so three taps sets the whole two-shot problem.
+- The moving-target intercept still works from the single gun (its speed+heading mode uses
+  Target A as the current position).
+- Untick Second target to go back to a single target.
 
 ## Saved references
 
 Open **Saved references** to store a firing setup and recall it later — handy for known
 targets (HQ, bridges, chokepoints).
 
-- Type a name and hit **Save current**; it snapshots Gun A, Gun B (if enabled) and the
-  Target. Each saved row shows the target, range, bearing and recommended charge at a
+- Type a name and hit **Save current**; it snapshots the gun, Target A and Target B (if
+  enabled). Each saved row shows the target, range, bearing and recommended charge at a
   glance.
-- **Load** drops the positions straight back onto the map (re-enabling the second gun if
-  the reference had one) and recomputes. **✕** deletes it.
+- **Load** drops the positions straight back onto the map (re-enabling the second target
+  if the reference had one) and recomputes. **✕** deletes it.
 - References persist in the browser between sessions.
 
 ## The ballistics (from the in-game Firing Table)
