@@ -69,6 +69,14 @@
   #selftest pre{white-space:pre-wrap;font:12px/1.5 var(--mono);margin:8px 0 0}
   .flex-between{display:flex;justify-content:space-between;align-items:center;gap:10px}
   .tag{font-size:11px;color:var(--dim)}
+  .maptools{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg>button{border:none;border-radius:0;background:var(--panel2);color:var(--ink);padding:8px 13px;font-size:13px}
+  .seg>button+button{border-left:1px solid var(--line)}
+  #placeGun.on{background:var(--accent2);color:#06121f;font-weight:600}
+  #placeTgt.on{background:var(--accent);color:#2a1e00;font-weight:600}
+  #map{width:100%;display:block;background:var(--panel2);border:1px solid var(--line);border-radius:10px;touch-action:none;cursor:crosshair}
+  .mapwrap{margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -77,6 +85,21 @@
 
 <div class="panel">
   <h2>Positions</h2>
+  <div class="mapwrap">
+    <div class="maptools">
+      <div class="seg" role="group" aria-label="Which marker to place">
+        <button id="placeGun" class="on" type="button">◎ Place Gun</button>
+        <button id="placeTgt" type="button">◎ Place Target</button>
+      </div>
+      <span class="tag">tap map to place · drag marker to nudge · wheel / pinch to zoom</span>
+      <div class="seg">
+        <button id="zoomOut" type="button" title="Zoom out">−</button>
+        <button id="zoomIn" type="button" title="Zoom in">+</button>
+        <button id="zoomFit" type="button" title="Fit whole map">Fit</button>
+      </div>
+    </div>
+    <canvas id="map"></canvas>
+  </div>
   <div class="grid2">
     <div>
       <label>Gun / Turret position</label>
@@ -451,6 +474,8 @@ if (typeof module !== 'undefined' && module.exports){
         computeIntercept(gun, tgt);
       }
     }
+
+    drawMap();
   }
 
   function computeIntercept(gun, tgt){
@@ -653,6 +678,164 @@ if (typeof module !== 'undefined' && module.exports){
     var el = $('testOut'); el.className = fail===0 ? 'good' : 'err';
     el.textContent = head + out.join('\n');
   };
+
+  // ---------------- interactive map ----------------
+  function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+  function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+  var WORLD_W = 20000, WORLD_H = 11000;   // metres — cols A–T (×1km) by rows 0–10 (×1km)
+  var canvas = $('map');
+  var ctx = (canvas && canvas.getContext) ? canvas.getContext('2d') : null;
+  var dpr = Math.max(1, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+  var view = { scale: 0.04, ox: 0, oy: 0 };
+  var placing = 'gun';
+  var pointers = {}, dragState = null, downPt = null, moved = false, pinch = null;
+
+  function canvasH(){ return parseFloat(canvas.style.height) || (canvas.clientWidth*WORLD_H/WORLD_W); }
+  function w2s(wx,wy){ return { x: wx*view.scale + view.ox, y: wy*view.scale + view.oy }; }
+  function s2w(sx,sy){ return { x: (sx-view.ox)/view.scale, y: (sy-view.oy)/view.scale }; }
+  function fitScale(){ return Math.min((canvas.clientWidth-16)/WORLD_W, (canvasH()-16)/WORLD_H); }
+
+  function resizeCanvas(){
+    if(!ctx) return;
+    var W = canvas.clientWidth, H = clamp(W*WORLD_H/WORLD_W, 180, 460);
+    canvas.style.height = H + 'px';
+    canvas.width = Math.round(W*dpr); canvas.height = Math.round(H*dpr);
+    drawMap();
+  }
+  function fitView(){
+    if(!ctx) return;
+    var W = canvas.clientWidth, H = canvasH(), s = fitScale();
+    view.scale = s; view.ox = (W-WORLD_W*s)/2; view.oy = (H-WORLD_H*s)/2;
+    drawMap();
+  }
+  function zoomTo(ns, cx, cy){
+    if(!ctx) return;
+    ns = clamp(ns, fitScale()*0.9, 1.0);
+    var wc = s2w(cx,cy);
+    view.scale = ns; view.ox = cx - wc.x*ns; view.oy = cy - wc.y*ns;
+    drawMap();
+  }
+
+  function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+  function labelChip(x,y,text){
+    ctx.save(); ctx.font='11px system-ui'; var tw=ctx.measureText(text).width;
+    ctx.fillStyle='rgba(8,12,18,0.9)'; roundRect(x-tw/2-6,y-9,tw+12,18,4); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='#e6edf3'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,x,y); ctx.restore();
+  }
+  function drawMarker(w,color,tag){
+    var p=w2s(w.x,w.y);
+    ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(p.x,p.y,7,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p.x-11,p.y); ctx.lineTo(p.x+11,p.y); ctx.moveTo(p.x,p.y-11); ctx.lineTo(p.x,p.y+11); ctx.stroke();
+    ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill();
+    ctx.font='bold 10px system-ui'; var tw=ctx.measureText(tag).width; ctx.textAlign='left'; ctx.textBaseline='middle';
+    roundRect(p.x+10,p.y-20,tw+8,14,3); ctx.fillStyle=color; ctx.fill();
+    ctx.fillStyle='#06111c'; ctx.fillText(tag,p.x+14,p.y-13); ctx.restore();
+  }
+
+  function drawMap(){
+    if(!ctx) return;
+    var W=canvas.clientWidth, H=canvasH();
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#0a0f16'; ctx.fillRect(0,0,W,H);
+    var o=w2s(0,0), e=w2s(WORLD_W,WORLD_H);
+    ctx.fillStyle='#0e1620'; ctx.fillRect(o.x,o.y,e.x-o.x,e.y-o.y);
+
+    var s=view.scale, tl=s2w(0,0), br=s2w(W,H);
+    var minWX=clamp(tl.x,0,WORLD_W), maxWX=clamp(br.x,0,WORLD_W);
+    var minWY=clamp(tl.y,0,WORLD_H), maxWY=clamp(br.y,0,WORLD_H);
+
+    if(s*100>=11){ // 100m subgrid, only when zoomed in
+      ctx.strokeStyle='rgba(90,120,150,0.18)'; ctx.lineWidth=1; ctx.beginPath();
+      for(var x=Math.floor(minWX/100)*100; x<=maxWX; x+=100){ var xp=w2s(x,0).x; ctx.moveTo(xp,w2s(0,minWY).y); ctx.lineTo(xp,w2s(0,maxWY).y); }
+      for(var y=Math.floor(minWY/100)*100; y<=maxWY; y+=100){ var yp=w2s(0,y).y; ctx.moveTo(w2s(minWX,0).x,yp); ctx.lineTo(w2s(maxWX,0).x,yp); }
+      ctx.stroke();
+    }
+    ctx.strokeStyle='rgba(120,150,180,0.55)'; ctx.lineWidth=1; ctx.beginPath(); // 1km grid
+    for(var c=0;c<=20;c++){ var gx=w2s(c*1000,0).x; ctx.moveTo(gx,o.y); ctx.lineTo(gx,e.y); }
+    for(var r=0;r<=11;r++){ var gy=w2s(0,r*1000).y; ctx.moveTo(o.x,gy); ctx.lineTo(e.x,gy); }
+    ctx.stroke();
+
+    if(s*1000>=16){ // grid labels
+      ctx.fillStyle='#8b98a5'; ctx.font='12px system-ui'; ctx.textBaseline='middle';
+      ctx.textAlign='center';
+      for(var c2=0;c2<20;c2++){ ctx.fillText(String.fromCharCode(65+c2), w2s((c2+0.5)*1000,0).x, clamp(o.y+10,10,H-4)); }
+      ctx.textAlign='left';
+      for(var r2=0;r2<11;r2++){ ctx.fillText(String(r2), clamp(o.x+4,2,W-12), w2s(0,(r2+0.5)*1000).y); }
+    }
+
+    var gun=parsePosition($('gun').value), tgt=parsePosition($('tgt').value);
+    if(gun&&tgt){
+      var gw=toWorld(gun), tw=toWorld(tgt), gs=w2s(gw.x,gw.y), tsx=w2s(tw.x,tw.y);
+      ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(gs.x,gs.y); ctx.lineTo(tsx.x,tsx.y); ctx.stroke(); ctx.setLineDash([]);
+      var rb=rangeBearing(gun,tgt,settings.northUp);
+      labelChip((gs.x+tsx.x)/2,(gs.y+tsx.y)/2, rb.km.toFixed(2)+'km · '+fmtBearing(rb.bearing));
+    }
+    if(gun) drawMarker(toWorld(gun), '#4ea1ff', 'GUN');
+    if(tgt) drawMarker(toWorld(tgt), '#ffb347', 'TGT');
+  }
+
+  function setCoord(which, wx, wy){
+    wx = clamp(Math.round(wx/100)*100, 0, 19900);
+    wy = clamp(Math.round(wy/100)*100, 0, 10900);
+    var col=Math.floor(wx/1000), row=Math.floor(wy/1000);
+    var sx=Math.round((wx-col*1000)/100), sy=Math.round((wy-row*1000)/100);
+    $(which==='gun'?'gun':'tgt').value = String.fromCharCode(65+col)+row+'-'+sx+','+sy;
+    compute();
+  }
+  function setPlacing(which){ placing=which; if($('placeGun'))$('placeGun').classList.toggle('on',which==='gun'); if($('placeTgt'))$('placeTgt').classList.toggle('on',which==='tgt'); }
+  function hitMarker(sx,sy){
+    var best=null,bd=16,g=parsePosition($('gun').value),t=parsePosition($('tgt').value);
+    if(g){ var d1=dist(w2s(toWorld(g).x,toWorld(g).y),{x:sx,y:sy}); if(d1<bd){bd=d1;best='gun';} }
+    if(t){ var d2=dist(w2s(toWorld(t).x,toWorld(t).y),{x:sx,y:sy}); if(d2<bd){bd=d2;best='tgt';} }
+    return best;
+  }
+
+  if(canvas){
+    $('placeGun').onclick=function(){ setPlacing('gun'); };
+    $('placeTgt').onclick=function(){ setPlacing('tgt'); };
+    $('zoomIn').onclick=function(){ zoomTo(view.scale*1.4, canvas.clientWidth/2, canvasH()/2); };
+    $('zoomOut').onclick=function(){ zoomTo(view.scale/1.4, canvas.clientWidth/2, canvasH()/2); };
+    $('zoomFit').onclick=function(){ fitView(); };
+
+    canvas.addEventListener('pointerdown', function(e){
+      if(canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+      pointers[e.pointerId]={x:e.offsetX,y:e.offsetY};
+      if(Object.keys(pointers).length===2){ var ids=Object.keys(pointers); pinch={d:dist(pointers[ids[0]],pointers[ids[1]]),scale:view.scale}; dragState=null; return; }
+      downPt={x:e.offsetX,y:e.offsetY}; moved=false;
+      var hit=hitMarker(e.offsetX,e.offsetY);
+      dragState = hit ? {type:'marker',which:hit} : {type:'pan',ox:view.ox,oy:view.oy};
+    });
+    canvas.addEventListener('pointermove', function(e){
+      if(!(e.pointerId in pointers)) return;
+      pointers[e.pointerId]={x:e.offsetX,y:e.offsetY};
+      var ids=Object.keys(pointers);
+      if(ids.length>=2 && pinch){ var a=pointers[ids[0]],b=pointers[ids[1]]; zoomTo(pinch.scale*(dist(a,b)/pinch.d),(a.x+b.x)/2,(a.y+b.y)/2); return; }
+      if(!dragState) return;
+      var dx=e.offsetX-downPt.x, dy=e.offsetY-downPt.y;
+      if(Math.abs(dx)+Math.abs(dy)>4) moved=true;
+      if(dragState.type==='marker' && moved){ var w=s2w(e.offsetX,e.offsetY); setCoord(dragState.which,w.x,w.y); }
+      else if(dragState.type==='pan' && moved){ view.ox=dragState.ox+dx; view.oy=dragState.oy+dy; drawMap(); }
+    });
+    function endPtr(e){
+      var wasMoved=moved, ds=dragState;
+      if(e.pointerId in pointers) delete pointers[e.pointerId];
+      if(Object.keys(pointers).length<2) pinch=null;
+      dragState=null;
+      if(!wasMoved && ds && ds.type==='pan'){ var w=s2w(e.offsetX,e.offsetY); setCoord(placing,w.x,w.y); if(placing==='gun') setPlacing('tgt'); }
+      else if(!wasMoved && ds && ds.type==='marker'){ setPlacing(ds.which); }
+    }
+    canvas.addEventListener('pointerup', endPtr);
+    canvas.addEventListener('pointercancel', function(e){ if(e.pointerId in pointers) delete pointers[e.pointerId]; dragState=null; pinch=null; });
+    canvas.addEventListener('wheel', function(e){ e.preventDefault(); zoomTo(view.scale*Math.exp(-e.deltaY*0.0015), e.offsetX, e.offsetY); }, {passive:false});
+
+    if(typeof window !== 'undefined') window.addEventListener('resize', function(){ resizeCanvas(); fitView(); });
+    resizeCanvas(); fitView();
+  }
 
   // init
   renderCal();
