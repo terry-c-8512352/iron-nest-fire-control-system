@@ -14,7 +14,22 @@ settings are saved in the browser.
 Just open `index.html` in a browser — double-click it, or drag it into a browser tab.
 Works fully offline. On a phone, use *Add to Home Screen* for one-tap access.
 
-## Position format
+## Picking positions — the map (fastest)
+
+Instead of typing coordinates, use the map at the top of **Positions**:
+
+- **Tap** an empty spot to drop the **Gun** — it then auto-switches to **Target**, so a
+  second tap places the target. One-two and you have a solution.
+- **Drag** either marker to nudge it; **tap a marker** to re-select it for placing.
+- **Wheel / pinch** to zoom (the 100 m subgrid appears when you're zoomed in), **drag**
+  empty space to pan, **Fit** returns to the whole map.
+- Use the **Place Gun / Place Target** buttons to choose which one the next tap sets.
+
+Everything snaps to the 100 m subgrid and stays in sync with the text fields below — so
+you can tap to get close, then fine-tune by typing, or vice-versa. The dashed line shows
+range and bearing live.
+
+## Position format (typing, still supported)
 
 ```
 <Col><Row>-<subX>,<subY>
@@ -88,12 +103,15 @@ Calibration is saved locally and persists between sessions.
 
 ## One-time setup: check your north axis
 
-Bearing depends on which way the map's rows run. The default assumes **row 0 is North**
-(top of map), rows increasing southward. Verify once:
+Bearing depends on which way the map's rows run. The default is **north-up**: higher row
+number is North, so **row 10 is at the top** of the map and row 0 at the bottom (matching
+the in-game map, e.g. A10 top, A0 bottom). The on-screen map is drawn the same way. Verify
+once:
 
 - Put a target due **East** of your gun (same row, higher column). Bearing should read
-  **90°**. If North/South looks mirrored, open **Settings** and toggle the row-direction
-  option, then re-check.
+  **90°**; a target one row **higher** (further up the map) should read **0° / North**.
+  If North/South looks mirrored, open **Settings** and untick the north-up option — that
+  flips both the bearings and the map together.
 
 Settings also has an angle-unit display (degrees / 6400 NATO mils / 6000 mils) for
 bearing; elevation always shows in **degrees** to match the firing table.

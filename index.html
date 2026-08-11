@@ -193,8 +193,8 @@
 <details>
   <summary>⚙ Settings</summary>
   <div class="panel" style="border-top:none;border-radius:0 0 12px 12px;margin-top:0">
-    <label class="switch"><input type="checkbox" id="setNorth" checked> Row/subgrid increases <b>southward</b> (row 0 = North / top of map)</label>
-    <p class="hint" style="margin-top:4px">If in-game bearings look mirrored N↔S, uncheck this. Verify with a known due-East shot (should read 90°).</p>
+    <label class="switch"><input type="checkbox" id="setNorth" checked> North is <b>up</b> — higher row is North (row 10 at top, row 0 at bottom)</label>
+    <p class="hint" style="margin-top:4px">Matches the in-game map (e.g. A10 top, A0 bottom). If bearings still look mirrored N↔S, uncheck this. Verify with a known due-East shot (should read 90°).</p>
     <div class="row" style="margin-top:12px">
       <div>
         <label>Angle display</label>
@@ -260,11 +260,11 @@ function worldToPos(x, y){
 
 function normDeg(d){ d = d % 360; if(d < 0) d += 360; return d; }
 
-// northUp: true => smaller y is North (row 0 at top)
+// northUp: true => larger row/y is North (row 10 at top, row 0 at bottom — matches the game map)
 function rangeBearing(gun, tgt, northUp){
   var g = toWorld(gun), t = toWorld(tgt);
   var dx = t.x - g.x, dyw = t.y - g.y;
-  var dNorth = northUp ? -dyw : dyw;
+  var dNorth = northUp ? dyw : -dyw;
   var meters = Math.sqrt(dx*dx + dyw*dyw);
   var bearing = normDeg(Math.atan2(dx, dNorth) * 180/Math.PI);
   return { meters: meters, km: meters/1000, bearing: bearing };
@@ -318,7 +318,7 @@ function solveIntercept(gun, tgt, speed, headingDeg, charge, cfg, cal){
   var g = toWorld(gun), p0 = toWorld(tgt);
   var br = headingDeg * Math.PI/180;
   var vE = speed*Math.sin(br), vN = speed*Math.cos(br);
-  var vx = vE, vy = cfg.northUp ? -vN : vN;
+  var vx = vE, vy = cfg.northUp ? vN : -vN;
   var t = 0, conv = false, src = 'seed';
   for(var i=0;i<200;i++){
     var px = p0.x + vx*t, py = p0.y + vy*t;
@@ -332,7 +332,7 @@ function solveIntercept(gun, tgt, speed, headingDeg, charge, cfg, cal){
   var R2 = Math.sqrt(dx*dx + dyw*dyw)/1000;
   var elev = slopes[charge-1]*R2;
   var valid = conv && R2 > 0 && elev <= ELEV_CAP + 1e-9 && R2 <= maxRange(slopes);
-  var dNorth = cfg.northUp ? -dyw : dyw;
+  var dNorth = cfg.northUp ? dyw : -dyw;
   var bearing = normDeg(Math.atan2(dx, dNorth) * 180/Math.PI);
   return { conv:conv, t:t, range_km:R2, elevation:elev, bearing:bearing, valid:valid, point:worldToPos(fx,fy), src:src };
 }
@@ -374,7 +374,7 @@ function trackVelocity(p1, p2, dt, northUp){
   var a = toWorld(p1), b = toWorld(p2);
   var wvx = (b.x - a.x)/dt, wvy = (b.y - a.y)/dt;
   var speed = Math.sqrt(wvx*wvx + wvy*wvy);
-  var heading = normDeg(Math.atan2(wvx, northUp ? -wvy : wvy) * 180/Math.PI);
+  var heading = normDeg(Math.atan2(wvx, northUp ? wvy : -wvy) * 180/Math.PI);
   return { speed: speed, heading: heading, wvx: wvx, wvy: wvy };
 }
 
@@ -422,7 +422,7 @@ if (typeof module !== 'undefined' && module.exports){
   function fmtT(sec, isClock){ return isClock ? fmtClock(sec) : (String(+sec.toFixed(1)) + 's'); }
   function rbFromWorld(gun, pw){
     var g = toWorld(gun), dx = pw.x-g.x, dyw = pw.y-g.y;
-    var dN = settings.northUp ? -dyw : dyw;
+    var dN = settings.northUp ? dyw : -dyw;
     return { km: Math.sqrt(dx*dx+dyw*dyw)/1000, bearing: normDeg(Math.atan2(dx, dN)*180/Math.PI) };
   }
   function currentMode(){ var r = document.querySelector('input[name=vsrc]:checked'); return r ? r.value : 'track'; }
@@ -504,7 +504,7 @@ if (typeof module !== 'undefined' && module.exports){
         var to = parseTimeToSeconds($('shT').value) || { sec:0, isClock:false };
         isClock = to.isClock;
         var br = hdg*Math.PI/180, vE = spd*Math.sin(br), vN = spd*Math.cos(br);
-        vel = { speed: spd, heading: normDeg(hdg), wvx: vE, wvy: settings.northUp ? -vN : vN };
+        vel = { speed: spd, heading: normDeg(hdg), wvx: vE, wvy: settings.northUp ? vN : -vN };
         anchor = toWorld(tgt); t0 = to.sec;
       }
     }
@@ -622,10 +622,10 @@ if (typeof module !== 'undefined' && module.exports){
     var rb = rangeBearing(g, t1, true);
     ok('range A0-0,0→A0-9,0 = 900m', near(rb.meters,900,1e-6), rb.meters);
     ok('bearing due East = 90°', near(rb.bearing,90,1e-6), rb.bearing);
-    var rbS = rangeBearing(g, parsePosition('A0-0,9'), true);
-    ok('bearing +row (northUp) = South 180°', near(rbS.bearing,180,1e-6), rbS.bearing);
+    var rbN = rangeBearing(g, parsePosition('A0-0,9'), true);
+    ok('bearing +row (northUp) = North 0°', near(rbN.bearing,0,1e-6), rbN.bearing);
     var rbD = rangeBearing(g, parsePosition('A0-9,9'), true);
-    ok('bearing SE = 135°', near(rbD.bearing,135,1e-6), rbD.bearing);
+    ok('bearing +col +row = NE 45°', near(rbD.bearing,45,1e-6), rbD.bearing);
 
     // ballistics vs firing table
     ok('k3 @10.1km = 40.40°', near(validCharges(10.1)[0].elevation, 40.40, 1e-6), validCharges(10.1)[0].elevation);
@@ -692,8 +692,9 @@ if (typeof module !== 'undefined' && module.exports){
   var pointers = {}, dragState = null, downPt = null, moved = false, pinch = null;
 
   function canvasH(){ return parseFloat(canvas.style.height) || (canvas.clientWidth*WORLD_H/WORLD_W); }
-  function w2s(wx,wy){ return { x: wx*view.scale + view.ox, y: wy*view.scale + view.oy }; }
-  function s2w(sx,sy){ return { x: (sx-view.ox)/view.scale, y: (sy-view.oy)/view.scale }; }
+  // When north-up, flip Y so larger row (row 10) is at the top of the canvas, matching the game map.
+  function w2s(wx,wy){ var vy = settings.northUp ? (WORLD_H - wy) : wy; return { x: wx*view.scale + view.ox, y: vy*view.scale + view.oy }; }
+  function s2w(sx,sy){ var wy0 = (sy-view.oy)/view.scale; return { x: (sx-view.ox)/view.scale, y: settings.northUp ? (WORLD_H - wy0) : wy0 }; }
   function fitScale(){ return Math.min((canvas.clientWidth-16)/WORLD_W, (canvasH()-16)/WORLD_H); }
 
   function resizeCanvas(){
@@ -742,7 +743,8 @@ if (typeof module !== 'undefined' && module.exports){
     ctx.clearRect(0,0,W,H);
     ctx.fillStyle='#0a0f16'; ctx.fillRect(0,0,W,H);
     var o=w2s(0,0), e=w2s(WORLD_W,WORLD_H);
-    ctx.fillStyle='#0e1620'; ctx.fillRect(o.x,o.y,e.x-o.x,e.y-o.y);
+    var left=Math.min(o.x,e.x), right=Math.max(o.x,e.x), top=Math.min(o.y,e.y), bot=Math.max(o.y,e.y);
+    ctx.fillStyle='#0e1620'; ctx.fillRect(left,top,right-left,bot-top);
 
     var s=view.scale, tl=s2w(0,0), br=s2w(W,H);
     var minWX=clamp(tl.x,0,WORLD_W), maxWX=clamp(br.x,0,WORLD_W);
@@ -755,16 +757,16 @@ if (typeof module !== 'undefined' && module.exports){
       ctx.stroke();
     }
     ctx.strokeStyle='rgba(120,150,180,0.55)'; ctx.lineWidth=1; ctx.beginPath(); // 1km grid
-    for(var c=0;c<=20;c++){ var gx=w2s(c*1000,0).x; ctx.moveTo(gx,o.y); ctx.lineTo(gx,e.y); }
-    for(var r=0;r<=11;r++){ var gy=w2s(0,r*1000).y; ctx.moveTo(o.x,gy); ctx.lineTo(e.x,gy); }
+    for(var c=0;c<=20;c++){ var gx=w2s(c*1000,0).x; ctx.moveTo(gx,top); ctx.lineTo(gx,bot); }
+    for(var r=0;r<=11;r++){ var gy=w2s(0,r*1000).y; ctx.moveTo(left,gy); ctx.lineTo(right,gy); }
     ctx.stroke();
 
     if(s*1000>=16){ // grid labels
       ctx.fillStyle='#8b98a5'; ctx.font='12px system-ui'; ctx.textBaseline='middle';
       ctx.textAlign='center';
-      for(var c2=0;c2<20;c2++){ ctx.fillText(String.fromCharCode(65+c2), w2s((c2+0.5)*1000,0).x, clamp(o.y+10,10,H-4)); }
+      for(var c2=0;c2<20;c2++){ ctx.fillText(String.fromCharCode(65+c2), w2s((c2+0.5)*1000,0).x, clamp(top+10,10,H-4)); }
       ctx.textAlign='left';
-      for(var r2=0;r2<11;r2++){ ctx.fillText(String(r2), clamp(o.x+4,2,W-12), w2s(0,(r2+0.5)*1000).y); }
+      for(var r2=0;r2<11;r2++){ ctx.fillText(String(r2), clamp(left+4,2,W-12), w2s(0,(r2+0.5)*1000).y); }
     }
 
     var gun=parsePosition($('gun').value), tgt=parsePosition($('tgt').value);
