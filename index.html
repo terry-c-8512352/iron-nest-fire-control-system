@@ -77,6 +77,16 @@
   #placeTgt.on{background:var(--accent);color:#2a1e00;font-weight:600}
   #map{width:100%;display:block;background:var(--panel2);border:1px solid var(--line);border-radius:10px;touch-action:none;cursor:crosshair}
   .mapwrap{margin-bottom:14px}
+  .gunblock{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+  .gunblock:last-child{margin-bottom:0}
+  .gbhead{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px}
+  .dot{width:11px;height:11px;border-radius:50%;display:inline-block;flex:0 0 auto}
+  #placeGunB.on{background:#b07cff;color:#12071f;font-weight:600}
+  .reflist-item{display:flex;align-items:center;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0}
+  .reflist-item .meta{min-width:0;overflow:hidden}
+  .reflist-item .nm{font-weight:600}
+  .reflist-item .sub2{color:var(--dim);font-size:12px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .reflist-item .acts{display:flex;gap:6px;flex:0 0 auto}
 </style>
 </head>
 <body>
@@ -88,8 +98,9 @@
   <div class="mapwrap">
     <div class="maptools">
       <div class="seg" role="group" aria-label="Which marker to place">
-        <button id="placeGun" class="on" type="button">◎ Place Gun</button>
-        <button id="placeTgt" type="button">◎ Place Target</button>
+        <button id="placeGun" class="on" type="button">◎ Gun A</button>
+        <button id="placeGunB" type="button" style="display:none">◎ Gun B</button>
+        <button id="placeTgt" type="button">◎ Target</button>
       </div>
       <span class="tag">tap map to place · drag marker to nudge · wheel / pinch to zoom</span>
       <div class="seg">
@@ -100,10 +111,15 @@
     </div>
     <canvas id="map"></canvas>
   </div>
+  <label class="switch small" style="margin-bottom:8px"><input type="checkbox" id="gunBOn"> Second gun — compare trajectories from two positions</label>
   <div class="grid2">
     <div>
-      <label>Gun / Turret position</label>
+      <label>Gun A position</label>
       <input id="gun" type="text" inputmode="text" placeholder="e.g. F5-3,4" value="F5-5,5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div id="gunBWrap" style="display:none">
+      <label>Gun B position</label>
+      <input id="gunB" type="text" inputmode="text" placeholder="e.g. C4-2,2" value="C4-2,2" autocomplete="off" autocapitalize="characters" spellcheck="false">
     </div>
     <div>
       <label>Target position</label>
@@ -116,15 +132,7 @@
 
 <div class="panel" id="solution">
   <h2>Firing Solution</h2>
-  <div class="tiles">
-    <div class="tile"><div class="k">Range</div><div class="v" id="oRange">—</div></div>
-    <div class="tile"><div class="k">Bearing</div><div class="v" id="oBearing">—</div></div>
-    <div class="tile"><div class="k">Recommended</div><div class="v" id="oRec">—</div></div>
-  </div>
-  <table>
-    <thead><tr><th>Charge</th><th>Elevation</th><th>Flight time</th><th>Note</th></tr></thead>
-    <tbody id="chargeRows"><tr><td colspan="4" class="muted">Enter positions…</td></tr></tbody>
-  </table>
+  <div id="solBlocks"><div class="gunblock"><span class="muted">Enter positions…</span></div></div>
 </div>
 
 <div class="panel">
@@ -133,6 +141,11 @@
     <label class="switch small"><input type="checkbox" id="moveOn"> enable</label>
   </div>
   <div id="moveBody" style="display:none;margin-top:12px">
+    <div id="igunSel" class="row" style="gap:18px;margin-bottom:8px;display:none">
+      <span class="tag" style="align-self:center">Intercept from:</span>
+      <label class="switch small" style="flex:0"><input type="radio" name="igun" value="gun" checked> Gun A</label>
+      <label class="switch small" style="flex:0"><input type="radio" name="igun" value="gunB"> Gun B</label>
+    </div>
     <div class="row" style="gap:18px;margin-bottom:6px">
       <label class="switch small" style="flex:0"><input type="radio" name="vsrc" value="track" checked> Two sightings</label>
       <label class="switch small" style="flex:0"><input type="radio" name="vsrc" value="sh"> Speed + heading</label>
@@ -187,6 +200,18 @@
     </div>
     <div id="calList" class="small" style="margin-top:12px"></div>
     <div style="margin-top:10px"><button id="calReset">Reset all calibration</button></div>
+  </div>
+</details>
+
+<details open>
+  <summary>💾 Saved references <span class="tag" id="refSummary"></span></summary>
+  <div class="panel" style="border-top:none;border-radius:0 0 12px 12px;margin-top:0">
+    <p class="small muted" style="margin-top:0">Save the current gun(s) + target as a named reference, then reload it into the map any time.</p>
+    <div class="cal-row">
+      <div><label>Reference name</label><input id="refName" type="text" placeholder="e.g. Enemy HQ / Bridge" autocomplete="off" spellcheck="false"></div>
+      <div style="flex:0"><label>&nbsp;</label><button id="refSave" class="primary">Save current</button></div>
+    </div>
+    <div id="refList" class="small" style="margin-top:12px"></div>
   </div>
 </details>
 
@@ -396,16 +421,21 @@ if (typeof module !== 'undefined' && module.exports){
 (function(){
   if (typeof document === 'undefined') return;
   var $ = function(id){ return document.getElementById(id); };
-  var LS_SET = 'in_fcs_settings_v1', LS_CAL = 'in_fcs_cal_v1';
+  var LS_SET = 'in_fcs_settings_v1', LS_CAL = 'in_fcs_cal_v1', LS_REFS = 'in_fcs_refs_v1';
+  var COLOR_A = '#4ea1ff', COLOR_B = '#b07cff', COLOR_T = '#ffb347';
 
   var settings = { northUp:true, unit:'deg', seedPerKm:3 };
   var cal = {}; // { charge: [ {range_km, tof_s} ] }
+  var refs = []; // [ {name, gun, gunB, tgt, ts} ]
 
   try { var s = JSON.parse(localStorage.getItem(LS_SET)); if(s) settings = Object.assign(settings, s); } catch(e){}
   try { var c = JSON.parse(localStorage.getItem(LS_CAL)); if(c) cal = c; } catch(e){}
+  try { var rf = JSON.parse(localStorage.getItem(LS_REFS)); if(rf && rf.length) refs = rf; } catch(e){}
 
   function saveSettings(){ try{ localStorage.setItem(LS_SET, JSON.stringify(settings)); }catch(e){} }
   function saveCal(){ try{ localStorage.setItem(LS_CAL, JSON.stringify(cal)); }catch(e){} }
+  function saveRefs(){ try{ localStorage.setItem(LS_REFS, JSON.stringify(refs)); }catch(e){} }
+  function gunBOn(){ return !!($('gunBOn') && $('gunBOn').checked); }
   function cfg(){ return { northUp:settings.northUp, seedPerKm:Number(settings.seedPerKm)||3, slopes:DEFAULT_SLOPES }; }
 
   function fmtBearing(deg){
@@ -428,50 +458,67 @@ if (typeof module !== 'undefined' && module.exports){
   function currentMode(){ var r = document.querySelector('input[name=vsrc]:checked'); return r ? r.value : 'track'; }
 
   // ---- main recompute ----
+  function tile(k,v){ return '<div class="tile"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>'; }
+
+  function buildSolutionBlock(gunPos, tgt, glabel, color){
+    var head = '<div class="gbhead"><span class="dot" style="background:'+color+'"></span>'+glabel+' → Target</div>';
+    var rb = rangeBearing(gunPos, tgt, settings.northUp);
+    var charges = validCharges(rb.km, DEFAULT_SLOPES);
+    var tiles, table;
+    if(charges.length === 0){
+      var reason = rb.km <= 0 ? 'same position' : ('range ' + rb.km.toFixed(2) + ' km &gt; max ' + maxRange() + ' km');
+      tiles = '<div class="tiles">'+tile('Range', rb.km.toFixed(2)+' <small>km</small>')+tile('Bearing', fmtBearing(rb.bearing))+
+        tile('Recommended', '<small class="err">out of range</small>')+'</div>';
+      table = '<table><tbody><tr><td class="err">No solution — '+reason+'.</td></tr></tbody></table>';
+    } else {
+      tiles = '<div class="tiles">'+tile('Range', rb.km.toFixed(2)+' <small>km</small>')+tile('Bearing', fmtBearing(rb.bearing))+
+        tile('Recommended', 'Charge '+charges[0].charge+' <small>@ '+fmtElev(charges[0].elevation)+'</small>')+'</div>';
+      var rows = '';
+      for(var i=0;i<charges.length;i++){
+        var ch = charges[i], r = tofFor(ch.charge, rb.km, cal, cfg().seedPerKm);
+        var note = i===0 ? '<span class="pill">MIN CHARGE</span>' : (ch.elevation < 20 ? 'flat / fast' : (ch.elevation > 50 ? 'high arc' : ''));
+        rows += '<tr class="'+(i===0?'rec':'')+'"><td>'+ch.charge+'</td><td>'+fmtElev(ch.elevation)+'</td><td>'+fmtTof(r.tof, r.src)+'</td><td class="muted">'+note+'</td></tr>';
+      }
+      table = '<table><thead><tr><th>Charge</th><th>Elevation</th><th>Flight time</th><th>Note</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    }
+    return '<div class="gunblock">'+head+tiles+table+'</div>';
+  }
+
   function compute(){
-    var gunS = $('gun').value, tgtS = $('tgt').value;
-    var gun = parsePosition(gunS), tgt = parsePosition(tgtS);
+    var gunS = $('gun').value, tgtS = $('tgt').value, gunBS = $('gunB') ? $('gunB').value : '';
+    var gun = parsePosition(gunS), tgt = parsePosition(tgtS), gunB = parsePosition(gunBS);
+    var bOn = gunBOn();
     $('gun').classList.toggle('bad', gunS.trim()!=='' && !gun);
     $('tgt').classList.toggle('bad', tgtS.trim()!=='' && !tgt);
+    if($('gunB')) $('gunB').classList.toggle('bad', bOn && gunBS.trim()!=='' && !gunB);
 
     var err = $('posErr');
-    err.style.display = ((gunS.trim() && !gun) || (tgtS.trim() && !tgt)) ? 'block' : 'none';
+    err.style.display = ((gunS.trim() && !gun) || (tgtS.trim() && !tgt) || (bOn && gunBS.trim() && !gunB)) ? 'block' : 'none';
     err.textContent = 'Check position format — e.g. F5-3,4  (Col A–T, Row 0–10, subgrid 0–9).';
 
-    // ---- static solution (needs gun + target) ----
-    if(!gun || !tgt){
-      $('oRange').textContent = $('oBearing').textContent = $('oRec').textContent = '—';
-      $('chargeRows').innerHTML = '<tr><td colspan="4" class="muted">Enter valid gun + target…</td></tr>';
+    // ---- static solution block(s) ----
+    if(!tgt){
+      $('solBlocks').innerHTML = '<div class="gunblock"><span class="muted">Enter a valid target…</span></div>';
     } else {
-      var rb = rangeBearing(gun, tgt, settings.northUp);
-      $('oRange').innerHTML = rb.km.toFixed(2) + ' <small>km</small>';
-      $('oBearing').innerHTML = fmtBearing(rb.bearing);
-      var charges = validCharges(rb.km, DEFAULT_SLOPES);
-      if(charges.length === 0){
-        $('oRec').innerHTML = '<small class="err">out of range</small>';
-        var reason = rb.km <= 0 ? 'same position' : ('range ' + rb.km.toFixed(2) + ' km &gt; max ' + maxRange() + ' km');
-        $('chargeRows').innerHTML = '<tr><td colspan="4" class="err">No solution — ' + reason + '.</td></tr>';
-      } else {
-        $('oRec').innerHTML = 'Charge ' + charges[0].charge + ' <small>@ ' + fmtElev(charges[0].elevation) + '</small>';
-        var rows = '';
-        for(var i=0;i<charges.length;i++){
-          var ch = charges[i];
-          var r = tofFor(ch.charge, rb.km, cal, cfg().seedPerKm);
-          var rec = i===0 ? ' rec' : '';
-          var note = i===0 ? '<span class="pill">MIN CHARGE</span>' : (ch.elevation < 20 ? 'flat / fast' : (ch.elevation > 50 ? 'high arc' : ''));
-          rows += '<tr class="'+rec+'"><td>'+ch.charge+'</td><td>'+fmtElev(ch.elevation)+'</td><td>'+fmtTof(r.tof, r.src)+'</td><td class="muted">'+note+'</td></tr>';
-        }
-        $('chargeRows').innerHTML = rows;
+      var html = gun ? buildSolutionBlock(gun, tgt, bOn?'Gun A':'Gun', COLOR_A)
+                     : '<div class="gunblock"><div class="gbhead"><span class="dot" style="background:'+COLOR_A+'"></span>Gun A → Target</div><span class="muted">Enter a valid Gun A…</span></div>';
+      if(bOn){
+        html += gunB ? buildSolutionBlock(gunB, tgt, 'Gun B', COLOR_B)
+                     : '<div class="gunblock"><div class="gbhead"><span class="dot" style="background:'+COLOR_B+'"></span>Gun B → Target</div><span class="muted">Enter a valid Gun B…</span></div>';
       }
+      $('solBlocks').innerHTML = html;
     }
 
-    // ---- moving-target intercept (needs gun; target source depends on mode) ----
+    // ---- moving-target intercept (from the selected gun) ----
     if($('moveOn').checked){
-      if(!gun){
+      var sel = document.querySelector('input[name=igun]:checked');
+      var useB = bOn && sel && sel.value === 'gunB';
+      var igun = useB ? gunB : gun, iname = useB ? 'Gun B' : 'Gun A';
+      if(!igun){
         $('derived').textContent = $('predOut').textContent = '';
-        $('interRows').innerHTML = '<tr><td colspan="6" class="err">Enter a valid gun position.</td></tr>';
+        $('interRows').innerHTML = '<tr><td colspan="6" class="err">Enter a valid '+iname+' position.</td></tr>';
       } else {
-        computeIntercept(gun, tgt);
+        computeIntercept(igun, tgt);
       }
     }
 
@@ -598,10 +645,66 @@ if (typeof module !== 'undefined' && module.exports){
   $('setSeed').oninput = function(){ settings.seedPerKm = Number(this.value)||3; saveSettings(); compute(); };
 
   // ---- inputs ----
-  ['gun','tgt','spd','hdg','s1p','s1t','s2p','s2t','shT','fireT','predT'].forEach(function(id){
+  ['gun','gunB','tgt','spd','hdg','s1p','s1t','s2p','s2t','shT','fireT','predT'].forEach(function(id){
     var e = $(id); if(e) e.addEventListener('input', compute);
   });
   $('moveOn').addEventListener('change', function(){ $('moveBody').style.display = this.checked ? 'block' : 'none'; compute(); });
+
+  // ---- second gun ----
+  function syncGunB(){
+    var on = gunBOn();
+    if($('gunBWrap')) $('gunBWrap').style.display = on ? '' : 'none';
+    if($('placeGunB')) $('placeGunB').style.display = on ? '' : 'none';
+    if($('igunSel')) $('igunSel').style.display = on ? 'flex' : 'none';
+    if(!on){
+      if(placing==='gunB') setPlacing('gun');
+      var a = document.querySelector('input[name=igun][value=gun]'); if(a) a.checked = true;
+    }
+  }
+  if($('gunBOn')) $('gunBOn').addEventListener('change', function(){ syncGunB(); compute(); });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=igun]'), function(r){ r.addEventListener('change', compute); });
+
+  // ---- saved references ----
+  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function refSummaryText(ref){
+    var g=parsePosition(ref.gun), t=parsePosition(ref.tgt);
+    if(!g||!t) return ref.tgt || '—';
+    var rb=rangeBearing(g,t,settings.northUp), ch=validCharges(rb.km)[0];
+    return ref.tgt+' · '+rb.km.toFixed(2)+'km · '+fmtBearing(rb.bearing)+(ch?' · C'+ch.charge+' @'+fmtElev(ch.elevation):' · out of range');
+  }
+  function renderRefs(){
+    if(!$('refList')) return;
+    if(!refs.length){ $('refList').innerHTML='<span class="muted">No saved references yet.</span>'; if($('refSummary'))$('refSummary').textContent=''; return; }
+    if($('refSummary')) $('refSummary').textContent='('+refs.length+')';
+    var html='';
+    for(var i=0;i<refs.length;i++){
+      var ref=refs[i], gb = ref.gunB ? ' <span class="muted">· +B '+esc(ref.gunB)+'</span>' : '';
+      html+='<div class="reflist-item"><div class="meta"><div class="nm">'+esc(ref.name)+'</div>'+
+        '<div class="sub2">'+esc(refSummaryText(ref))+gb+'</div></div>'+
+        '<div class="acts"><button data-i="'+i+'" class="refLoad primary" style="padding:5px 10px">Load</button>'+
+        '<button data-i="'+i+'" class="refDel" style="padding:5px 9px" title="Delete">✕</button></div></div>';
+    }
+    $('refList').innerHTML=html;
+    Array.prototype.forEach.call(document.querySelectorAll('.refLoad'), function(b){ b.onclick=function(){ loadRef(+this.getAttribute('data-i')); }; });
+    Array.prototype.forEach.call(document.querySelectorAll('.refDel'), function(b){ b.onclick=function(){ refs.splice(+this.getAttribute('data-i'),1); saveRefs(); renderRefs(); }; });
+  }
+  function loadRef(i){
+    var ref=refs[i]; if(!ref) return;
+    $('gun').value = ref.gun || '';
+    $('tgt').value = ref.tgt || '';
+    if($('gunBOn')){ $('gunBOn').checked = !!ref.gunB; }
+    if(ref.gunB && $('gunB')) $('gunB').value = ref.gunB;
+    syncGunB();
+    compute();
+    if(typeof window !== 'undefined' && window.scrollTo){ try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); } }
+  }
+  if($('refSave')) $('refSave').onclick = function(){
+    var t = $('tgt').value.trim();
+    if(!parsePosition(t)){ alert('Set a valid Target before saving a reference.'); return; }
+    var name = ($('refName').value || '').trim() || ('Target '+t);
+    refs.unshift({ name:name, gun:$('gun').value.trim(), gunB: (gunBOn() && $('gunB')) ? $('gunB').value.trim() : '', tgt:t, ts:Date.now() });
+    saveRefs(); $('refName').value=''; renderRefs();
+  };
   Array.prototype.forEach.call(document.querySelectorAll('input[name=vsrc]'), function(r){
     r.addEventListener('change', function(){
       $('srcTrack').style.display = currentMode()==='track' ? 'block' : 'none';
@@ -770,15 +873,20 @@ if (typeof module !== 'undefined' && module.exports){
     }
 
     var gun=parsePosition($('gun').value), tgt=parsePosition($('tgt').value);
-    if(gun&&tgt){
-      var gw=toWorld(gun), tw=toWorld(tgt), gs=w2s(gw.x,gw.y), tsx=w2s(tw.x,tw.y);
-      ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
-      ctx.beginPath(); ctx.moveTo(gs.x,gs.y); ctx.lineTo(tsx.x,tsx.y); ctx.stroke(); ctx.setLineDash([]);
-      var rb=rangeBearing(gun,tgt,settings.northUp);
+    var bOn=gunBOn(), gunB=(bOn&&$('gunB'))?parsePosition($('gunB').value):null;
+    function fireLine(gp, col){
+      var gw=toWorld(gp), tw=toWorld(tgt), gs=w2s(gw.x,gw.y), tsx=w2s(tw.x,tw.y);
+      ctx.strokeStyle=col; ctx.globalAlpha=0.6; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(gs.x,gs.y); ctx.lineTo(tsx.x,tsx.y); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha=1;
+      var rb=rangeBearing(gp,tgt,settings.northUp);
       labelChip((gs.x+tsx.x)/2,(gs.y+tsx.y)/2, rb.km.toFixed(2)+'km · '+fmtBearing(rb.bearing));
     }
-    if(gun) drawMarker(toWorld(gun), '#4ea1ff', 'GUN');
-    if(tgt) drawMarker(toWorld(tgt), '#ffb347', 'TGT');
+    if(gun&&tgt) fireLine(gun, COLOR_A);
+    if(gunB&&tgt) fireLine(gunB, COLOR_B);
+    if(gun) drawMarker(toWorld(gun), COLOR_A, bOn?'A':'GUN');
+    if(gunB) drawMarker(toWorld(gunB), COLOR_B, 'B');
+    if(tgt) drawMarker(toWorld(tgt), COLOR_T, 'TGT');
   }
 
   function setCoord(which, wx, wy){
@@ -786,19 +894,28 @@ if (typeof module !== 'undefined' && module.exports){
     wy = clamp(Math.round(wy/100)*100, 0, 10900);
     var col=Math.floor(wx/1000), row=Math.floor(wy/1000);
     var sx=Math.round((wx-col*1000)/100), sy=Math.round((wy-row*1000)/100);
-    $(which==='gun'?'gun':'tgt').value = String.fromCharCode(65+col)+row+'-'+sx+','+sy;
+    if($(which)) $(which).value = String.fromCharCode(65+col)+row+'-'+sx+','+sy;
     compute();
   }
-  function setPlacing(which){ placing=which; if($('placeGun'))$('placeGun').classList.toggle('on',which==='gun'); if($('placeTgt'))$('placeTgt').classList.toggle('on',which==='tgt'); }
+  function setPlacing(which){
+    placing=which;
+    if($('placeGun'))$('placeGun').classList.toggle('on',which==='gun');
+    if($('placeGunB'))$('placeGunB').classList.toggle('on',which==='gunB');
+    if($('placeTgt'))$('placeTgt').classList.toggle('on',which==='tgt');
+  }
   function hitMarker(sx,sy){
-    var best=null,bd=16,g=parsePosition($('gun').value),t=parsePosition($('tgt').value);
-    if(g){ var d1=dist(w2s(toWorld(g).x,toWorld(g).y),{x:sx,y:sy}); if(d1<bd){bd=d1;best='gun';} }
-    if(t){ var d2=dist(w2s(toWorld(t).x,toWorld(t).y),{x:sx,y:sy}); if(d2<bd){bd=d2;best='tgt';} }
+    var best=null,bd=16;
+    var cand=[['gun',$('gun').value]];
+    if(gunBOn() && $('gunB')) cand.push(['gunB',$('gunB').value]);
+    cand.push(['tgt',$('tgt').value]);
+    for(var i=0;i<cand.length;i++){ var p=parsePosition(cand[i][1]); if(!p) continue;
+      var d=dist(w2s(toWorld(p).x,toWorld(p).y),{x:sx,y:sy}); if(d<bd){bd=d;best=cand[i][0];} }
     return best;
   }
 
   if(canvas){
     $('placeGun').onclick=function(){ setPlacing('gun'); };
+    if($('placeGunB')) $('placeGunB').onclick=function(){ setPlacing('gunB'); };
     $('placeTgt').onclick=function(){ setPlacing('tgt'); };
     $('zoomIn').onclick=function(){ zoomTo(view.scale*1.4, canvas.clientWidth/2, canvasH()/2); };
     $('zoomOut').onclick=function(){ zoomTo(view.scale/1.4, canvas.clientWidth/2, canvasH()/2); };
@@ -828,7 +945,9 @@ if (typeof module !== 'undefined' && module.exports){
       if(e.pointerId in pointers) delete pointers[e.pointerId];
       if(Object.keys(pointers).length<2) pinch=null;
       dragState=null;
-      if(!wasMoved && ds && ds.type==='pan'){ var w=s2w(e.offsetX,e.offsetY); setCoord(placing,w.x,w.y); if(placing==='gun') setPlacing('tgt'); }
+      if(!wasMoved && ds && ds.type==='pan'){ var w=s2w(e.offsetX,e.offsetY); setCoord(placing,w.x,w.y);
+        if(placing==='gun') setPlacing(gunBOn()?'gunB':'tgt');
+        else if(placing==='gunB') setPlacing('tgt'); }
       else if(!wasMoved && ds && ds.type==='marker'){ setPlacing(ds.which); }
     }
     canvas.addEventListener('pointerup', endPtr);
@@ -840,7 +959,9 @@ if (typeof module !== 'undefined' && module.exports){
   }
 
   // init
+  syncGunB();
   renderCal();
+  renderRefs();
   compute();
 })();
 </script>

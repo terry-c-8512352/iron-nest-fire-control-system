@@ -42,6 +42,31 @@ range and bearing live.
 
 Examples: `F5-5,5`, `K7-1,8`, `A0-0,0`.
 
+## Two guns (compare trajectories)
+
+Tick **Second gun** in Positions to add **Gun B**. You then get a firing solution block for
+**each gun → the same target**, side by side (Gun A in blue, Gun B in purple, Target in
+orange), so you can pick whichever gun has the better charge/elevation or shorter flight.
+
+- On the map there's now a **Place Gun A / Gun B / Target** selector; tapping empty space
+  cycles A → B → Target. Each gun draws its own coloured line to the target with live
+  range/bearing.
+- For **moving-target intercept**, an **Intercept from: Gun A / Gun B** selector appears —
+  the intercept is solved from whichever gun you pick.
+- Untick Second gun to go back to a single gun.
+
+## Saved references
+
+Open **Saved references** to store a firing setup and recall it later — handy for known
+targets (HQ, bridges, chokepoints).
+
+- Type a name and hit **Save current**; it snapshots Gun A, Gun B (if enabled) and the
+  Target. Each saved row shows the target, range, bearing and recommended charge at a
+  glance.
+- **Load** drops the positions straight back onto the map (re-enabling the second gun if
+  the reference had one) and recomputes. **✕** deletes it.
+- References persist in the browser between sessions.
+
 ## The ballistics (from the in-game Firing Table)
 
 Every powder charge is a straight line — **elevation° = (12 ÷ charge) × range(km)** —
