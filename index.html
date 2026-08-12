@@ -127,6 +127,7 @@
     <input id="refName" type="text" placeholder="Name e.g. Enemy HQ" autocomplete="off" spellcheck="false">
     <button id="refSave" class="primary" title="Save current gun + target(s)">Save</button>
   </div>
+  <p class="hint" id="refFull" style="display:none;margin:-6px 0 10px">Full (6 max) — saving another drops the oldest.</p>
   <div id="refCards"></div>
 </aside>
 
@@ -451,7 +452,8 @@ if (typeof module !== 'undefined' && module.exports){
 
   var settings = { northUp:true, unit:'deg', seedPerKm:3 };
   var cal = {}; // { charge: [ {range_km, tof_s} ] }
-  var refs = []; // [ {name, gun, tgt, tgtB, ts} ]
+  var refs = []; // [ {name, gun, tgt, tgtB, ts} ] — newest first
+  var MAX_REFS = 6; // hard cap; saving a 7th drops the oldest
 
   try { var s = JSON.parse(localStorage.getItem(LS_SET)); if(s) settings = Object.assign(settings, s); } catch(e){}
   try { var c = JSON.parse(localStorage.getItem(LS_CAL)); if(c) cal = c; } catch(e){}
@@ -708,7 +710,8 @@ if (typeof module !== 'undefined' && module.exports){
   }
   function renderRefs(){
     if(!$('refCards')) return;
-    if($('refSummary')) $('refSummary').textContent = refs.length ? '('+refs.length+')' : '';
+    if($('refSummary')) $('refSummary').textContent = refs.length ? '('+refs.length+'/'+MAX_REFS+')' : '';
+    if($('refFull')) $('refFull').style.display = refs.length >= MAX_REFS ? 'block' : 'none';
     if(!refs.length){
       $('refCards').innerHTML='<p class="hint" style="margin:0">No saved references yet. Set a gun and target, name it above and hit <b>Save</b> — the range, bearing and elevation land here as a card.</p>';
       return;
@@ -744,6 +747,7 @@ if (typeof module !== 'undefined' && module.exports){
     if(!parsePosition(t)){ alert('Set a valid Target A before saving a reference.'); return; }
     var name = ($('refName').value || '').trim() || ('Target '+t);
     refs.unshift({ name:name, gun:$('gun').value.trim(), tgt:t, tgtB: (tgtBOn() && $('tgtB')) ? $('tgtB').value.trim() : '', ts:Date.now() });
+    if(refs.length > MAX_REFS) refs.length = MAX_REFS; // newest first, so this drops the oldest
     saveRefs(); $('refName').value=''; renderRefs();
   };
   Array.prototype.forEach.call(document.querySelectorAll('input[name=vsrc]'), function(r){

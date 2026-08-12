@@ -69,6 +69,9 @@ Saved references live in the **left-hand rail**, always on screen as a stack of 
 handy for known targets (HQ, bridges, chokepoints).
 
 - Type a name and hit **Save**; it snapshots the gun, Target A and Target B (if enabled).
+- You can keep **6** at a time — the header shows how many slots are used (e.g. `4/6`).
+  Saving a 7th drops the **oldest** automatically, so the rail stays a short list of what
+  you're actually shooting at. Delete one with **✕** to free a slot deliberately.
 - Each card shows the target grid and its **range, bearing and elevation** as three
   read-at-a-glance figures, plus the recommended charge — so a known target is a glance,
   not a re-entry.
