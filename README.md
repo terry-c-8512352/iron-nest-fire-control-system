@@ -1,5 +1,7 @@
 # Iron Nest — Fire Control System
 
+**▶ Use it now: <https://terry-c-8512352.github.io/iron-nest-fire-control-system/>**
+
 A fast, portable fire-control calculator to run **alongside** *Iron Nest: Heavy Turret
 Simulator*. Type your gun grid and the target grid; it instantly gives **range,
 bearing, and every valid powder-charge + gun-elevation option**. It also solves
@@ -11,8 +13,14 @@ settings are saved in the browser.
 
 ## Run it
 
-Just open `index.html` in a browser — double-click it, or drag it into a browser tab.
-Works fully offline. On a phone, use *Add to Home Screen* for one-tap access.
+Easiest: open the hosted copy at
+<https://terry-c-8512352.github.io/iron-nest-fire-control-system/>. Nothing to download.
+
+Or run it locally — open `index.html` in a browser, double-click it, or drag it into a
+browser tab. Works fully offline. On a phone, use *Add to Home Screen* for one-tap access.
+
+Either way everything runs in your browser: your settings, calibration and saved
+references are stored on your own device and are never shared or uploaded.
 
 ## Picking positions — the map (fastest)
 
