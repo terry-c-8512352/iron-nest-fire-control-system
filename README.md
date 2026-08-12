@@ -172,14 +172,33 @@ Leave *"Fire at time"* blank to fire **now** (at the latest sighting / observati
 Set it to fire later — the solver advances the target to that moment first, so the aim
 point and impact time account for the delay.
 
-⚠️ **Flight times need calibrating.** The firing table has no time-of-flight data, so
-intercept timing starts as a rough **estimate** (marked `EST`). To make it accurate:
+## Flight times (measured)
 
-1. Fire a shot and count the seconds until impact.
-2. Open **Time-of-flight calibration** and log **charge · range (km) · seconds**.
-3. Two or more points for a charge → the app fits a line and drops the `EST` tag.
+The in-game firing table has no time-of-flight data, so it was timed by hand with the
+game's stopwatch — four shots per charge, 24 samples in `times.csv`. The result is simple:
 
-Calibration is saved locally and persists between sessions.
+> **Flight time is proportional to range, with a constant per charge.**
+> No intercept term — a zero-range shot takes zero seconds.
+
+| Charge | s/km | Flight time at that charge's max range |
+|:--:|:--:|:--|
+| 1 | 4.81 | 24.1 s @ 5 km |
+| 2 | 3.87 | 38.7 s @ 10 km |
+| 3 | 2.61 | 39.1 s @ 15 km |
+| 4 | 1.90 | 38.0 s @ 20 km |
+| 5 | 1.54 | 38.5 s @ 25 km |
+| 6 | 1.43 | 43.0 s @ 30 km |
+
+The fit is tight: charge 4 reproduces all four of its samples **exactly**, and charges 3, 5
+and 6 land within 0.2 s. Note that **elevation alone doesn't determine flight time** — every
+charge reaches 60° at its maximum range, yet those shots take anywhere from 24 s to 43 s.
+It's the charge *and* the range.
+
+These figures ship in the app, so nothing needs calibrating and no `EST` tags appear. If the
+game ever changes, open **Time-of-flight calibration** and log **charge · range · seconds**;
+**two or more** points for a charge override the built-in figure with your own fit. A single
+point is kept but not used — the table is fitted from four samples per charge, so one
+hand-timed shot shouldn't outrank it. Overrides save locally and persist between sessions.
 
 ## One-time setup: check your north axis
 

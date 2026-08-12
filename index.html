@@ -314,7 +314,7 @@
       <thead><tr><th>Charge</th><th>Aim point</th><th>Bearing</th><th>Elev</th><th>Fly</th><th>Impact&nbsp;at</th></tr></thead>
       <tbody id="interRows"><tr><td colspan="6" class="muted">—</td></tr></tbody>
     </table>
-    <div class="hint">Fire <b>now</b> and the shell meets the target at the listed aim point &amp; time. Impact time = fire time + flight time; accuracy needs TOF calibration below.</div>
+    <div class="hint">Fire <b>now</b> and the shell meets the target at the listed aim point &amp; time. Impact time = fire time + flight time, using the measured flight-time table.</div>
 
     <h2 style="margin:18px 0 10px">Predicted track — when to fire</h2>
     <div class="row" style="margin-bottom:10px">
@@ -335,7 +335,8 @@
 <details>
   <summary>⏱ Time-of-flight calibration <span class="tag" id="calSummary"></span></summary>
   <div class="panel" style="border-top:none;border-radius:0 0 12px 12px;margin-top:0">
-    <p class="small muted" style="margin-top:0">The firing table has no flight times, so intercept TOF starts as a rough <b>estimate</b>. To make intercepts accurate: fire a shot, count seconds to impact, and log <em>charge · range · seconds</em>. Two+ points per charge → linear fit.</p>
+    <p class="small muted" style="margin-top:0">Flight times now come from a <b>measured table</b> — timed in game, four shots per charge. Time is proportional to range for a given charge: <em>C1 4.81 · C2 3.87 · C3 2.61 · C4 1.90 · C5 1.54 · C6 1.43 s/km</em>. Nothing here needs calibrating unless the game changes.</p>
+    <p class="small muted">To override a charge with your own timings, log <em>charge · range · seconds</em> below. <b>Two or more</b> points for a charge replace the built-in figure with your own fit; a single point is kept but not used, since the table is fitted from four samples.</p>
     <div class="cal-row">
       <div><label>Charge</label><input id="calC" type="number" min="1" max="6" step="1" value="3"></div>
       <div><label>Range (km)</label><input id="calR" type="number" min="0" step="0.1" value="12"></div>
@@ -445,6 +446,13 @@ function validCharges(km, slopes){
 function maxRange(slopes){ slopes = slopes || DEFAULT_SLOPES; return slopes.length * BAND_KM; }
 
 // ---- Time of flight (calibratable) ----
+// Measured in game with the stopwatch: flight time is strictly proportional to
+// range for a given charge (t = m * km, no intercept), with m fixed per charge.
+// Elevation alone does NOT determine it — at 60° the six charges take 24.1s
+// through 43.0s. See times.csv for the raw samples these were fitted from.
+// Charge 4 reproduces all four of its samples exactly at 1.9 s/km.
+var DEFAULT_TOF_PER_KM = { 1:4.8136, 2:3.8690, 3:2.6064, 4:1.9000, 5:1.5390, 6:1.4331 };
+
 function tofSeed(km, seedPerKm){ return km * seedPerKm; }
 
 function fitTOF(points){
@@ -466,10 +474,16 @@ function fitTOF(points){
 
 function tofFor(charge, km, cal, seedPerKm){
   var pts = (cal && cal[charge]) ? cal[charge] : [];
-  var fit = fitTOF(pts);
-  if(!fit) return { tof: tofSeed(km, seedPerKm), src:'seed' };
-  var t = fit.m*km + fit.b; if(t < 0) t = 0;
-  return { tof: t, src: (fit.type==='prop' ? 'cal1' : 'cal') };
+  // Two or more logged shots beat the built-in table; a single hand-timed shot
+  // does not, since the table was fitted from four samples per charge.
+  if(pts.length >= 2){
+    var fit = fitTOF(pts);
+    var t = fit.m*km + fit.b; if(t < 0) t = 0;
+    return { tof: t, src:'cal' };
+  }
+  var per = DEFAULT_TOF_PER_KM[charge];
+  if(per) return { tof: per*km, src:'table' };
+  return { tof: tofSeed(km, seedPerKm), src:'seed' };
 }
 
 // Intercept: iterate t <- TOF(range(gun, targetAt(t))) with damping.
@@ -622,6 +636,7 @@ if (typeof module !== 'undefined' && module.exports){
   module.exports = { DEFAULT_SLOPES:DEFAULT_SLOPES, ELEV_CAP:ELEV_CAP, BAND_KM:BAND_KM,
     parsePosition:parsePosition, toWorld:toWorld, worldToPos:worldToPos, rangeBearing:rangeBearing,
     validCharges:validCharges, maxRange:maxRange, tofSeed:tofSeed, fitTOF:fitTOF, tofFor:tofFor,
+    DEFAULT_TOF_PER_KM:DEFAULT_TOF_PER_KM,
     solveIntercept:solveIntercept, normDeg:normDeg, worldToPseudo:worldToPseudo,
     parseTimeToSeconds:parseTimeToSeconds, fmtClock:fmtClock, trackVelocity:trackVelocity, posAt:posAt,
     WORLD_W:WORLD_W, WORLD_H:WORLD_H, SPEED_UNITS:SPEED_UNITS, speedToMS:speedToMS,
@@ -884,7 +899,7 @@ if (typeof module !== 'undefined' && module.exports){
   function renderCal(){
     var keys = Object.keys(cal).filter(function(k){ return cal[k] && cal[k].length; }).sort();
     if(keys.length === 0){
-      $('calList').innerHTML = '<span class="muted">No calibration logged — intercept flight times are estimates.</span>';
+      $('calList').innerHTML = '<span class="muted">Nothing logged — using the built-in measured table for every charge.</span>';
       $('calSummary').textContent = '(using estimates)';
     } else {
       var html = '', total=0;
@@ -1105,6 +1120,35 @@ if (typeof module !== 'undefined' && module.exports){
     // TOF calibration fit
     var fit = fitTOF([{range_km:10,tof_s:30},{range_km:20,tof_s:50}]);
     ok('TOF linear fit slope=2, intercept=10', near(fit.m,2,1e-9)&&near(fit.b,10,1e-9), fit.m+'/'+fit.b);
+
+    // measured flight-time table — every value below is an in-game stopwatch
+    // reading from times.csv; tolerance is the ±0.35s hand-timing error.
+    function tofOk(label, charge, km, expect, tol){
+      var r = tofFor(charge, km, {}, 3);
+      ok(label, Math.abs(r.tof-expect) <= (tol||0.35) && r.src==='table',
+         r.tof.toFixed(2)+'s src='+r.src);
+    }
+    tofOk('C1 @5km = 24.0s',  1,  5, 24.0);
+    tofOk('C2 @10km = 38.25s',2, 10, 38.25, 0.5);
+    tofOk('C3 @15km = 39.0s', 3, 15, 39.0);
+    tofOk('C4 @5km = 9.5s',   4,  5, 9.5);
+    tofOk('C4 @20km = 38.0s', 4, 20, 38.0);
+    tofOk('C5 @25km = 38.5s', 5, 25, 38.5);
+    tofOk('C6 @8km = 11.5s',  6,  8, 11.5);
+    tofOk('C6 @30km = 43.0s', 6, 30, 43.0);
+    ok('flight time is proportional to range', near(tofFor(4,10,{},3).tof, 2*tofFor(4,5,{},3).tof, 1e-9),
+       tofFor(4,10,{},3).tof+' vs 2x'+tofFor(4,5,{},3).tof);
+    ok('no EST once the table is in use', tofFor(3,12,{},3).src!=='seed', tofFor(3,12,{},3).src);
+    // same elevation, different charge -> different flight time (not elevation-driven)
+    ok('60° on C1 and C6 differ (24.1s vs 43.0s)',
+       Math.abs(tofFor(1,5,{},3).tof - tofFor(6,30,{},3).tof) > 15,
+       tofFor(1,5,{},3).tof.toFixed(1)+' vs '+tofFor(6,30,{},3).tof.toFixed(1));
+    // user calibration overrides, but only with 2+ points
+    var oneCal = { 3:[{range_km:10,tof_s:99}] };
+    ok('single logged shot does not override the table', tofFor(3,10,oneCal,3).src==='table', tofFor(3,10,oneCal,3).src);
+    var twoCal = { 3:[{range_km:10,tof_s:99},{range_km:20,tof_s:198}] };
+    ok('two logged shots do override', tofFor(3,10,twoCal,3).src==='cal' && near(tofFor(3,10,twoCal,3).tof,99,1e-6),
+       tofFor(3,10,twoCal,3).tof);
 
     // two-sighting track
     var ts = trackVelocity(parsePosition('A0-0,0'), parsePosition('A0-9,0'), 90, true);
