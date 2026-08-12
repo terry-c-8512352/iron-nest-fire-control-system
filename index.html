@@ -97,7 +97,9 @@
   .refcard{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 11px;margin-bottom:9px}
   .refcard:last-child{margin-bottom:0}
   .rc-head{display:flex;align-items:baseline;gap:8px;justify-content:space-between;margin-bottom:7px}
+  .rc-title{display:flex;align-items:baseline;gap:6px;min-width:0}
   .rc-name{font-weight:600;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill.new{background:var(--good);color:#04210b;font-weight:700;flex:0 0 auto;margin-left:0}
   .rc-del{background:none;border:none;color:var(--dim);padding:0 2px;font-size:13px;line-height:1;cursor:pointer;flex:0 0 auto}
   .rc-del:hover{color:var(--bad);border:none}
   .rc-tgt{display:flex;align-items:center;gap:6px;font:12px/1 var(--mono);color:var(--dim);margin-bottom:5px}
@@ -720,7 +722,8 @@ if (typeof module !== 'undefined' && module.exports){
     for(var i=0;i<refs.length;i++){
       var ref=refs[i], two=!!ref.tgtB;
       html+='<div class="refcard">'+
-        '<div class="rc-head"><span class="rc-name" title="'+esc(ref.name)+'">'+esc(ref.name)+'</span>'+
+        '<div class="rc-head"><div class="rc-title"><span class="rc-name" title="'+esc(ref.name)+'">'+esc(ref.name)+'</span>'+
+          (i===0 ? '<span class="pill new">NEW!</span>' : '')+'</div>'+
           '<button data-i="'+i+'" class="refDel rc-del" title="Delete">✕</button></div>'+
         legHTML(ref, ref.tgt, two?'A':'')+
         (two ? legHTML(ref, ref.tgtB, 'B') : '')+
