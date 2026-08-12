@@ -937,12 +937,28 @@ if (typeof module !== 'undefined' && module.exports){
     view.scale = s; view.ox = (W-WORLD_W*s)/2; view.oy = (H-WORLD_H*s)/2;
     drawMap();
   }
+  // Coalesce redraws to one per animation frame. Pointer/wheel events fire far
+  // faster than 60Hz and each draw repaints the whole sheet (texture, vignette,
+  // creases, grid), so drawing per event makes panning stutter.
+  var drawQueued = false;
+  function requestDraw(){
+    if(drawQueued) return;
+    drawQueued = true;
+    var raf = (typeof window!=='undefined' && window.requestAnimationFrame)
+      ? window.requestAnimationFrame.bind(window)
+      : function(f){ return setTimeout(f,16); };
+    raf(function(){ drawQueued = false; drawMap(); });
+  }
+
   function zoomTo(ns, cx, cy){
     if(!ctx) return;
     ns = clamp(ns, fitScale()*0.9, 1.0);
-    var wc = s2w(cx,cy);
-    view.scale = ns; view.ox = cx - wc.x*ns; view.oy = cy - wc.y*ns;
-    drawMap();
+    // Anchor the point under the cursor in *view* space (before the north-up
+    // flip). Using world Y here inverts the anchor and throws the sheet to the
+    // opposite edge on every wheel tick.
+    var vx = (cx - view.ox)/view.scale, vy = (cy - view.oy)/view.scale;
+    view.scale = ns; view.ox = cx - vx*ns; view.oy = cy - vy*ns;
+    requestDraw();
   }
 
   function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
@@ -1026,8 +1042,11 @@ if (typeof module !== 'undefined' && module.exports){
     ctx.restore();
 
     var s=view.scale, tl=s2w(0,0), br=s2w(W,H);
-    var minWX=clamp(tl.x,0,WORLD_W), maxWX=clamp(br.x,0,WORLD_W);
-    var minWY=clamp(tl.y,0,WORLD_H), maxWY=clamp(br.y,0,WORLD_H);
+    // North-up flips Y, so tl.y is the LARGER world Y — order them explicitly,
+    // otherwise the horizontal subgrid loop runs zero times and no horizontal
+    // 100 m lines are drawn.
+    var minWX=clamp(Math.min(tl.x,br.x),0,WORLD_W), maxWX=clamp(Math.max(tl.x,br.x),0,WORLD_W);
+    var minWY=clamp(Math.min(tl.y,br.y),0,WORLD_H), maxWY=clamp(Math.max(tl.y,br.y),0,WORLD_H);
 
     if(s*100>=11){ // 100m subgrid, only when zoomed in
       ctx.strokeStyle='rgba(88,64,34,0.22)'; ctx.lineWidth=1; ctx.beginPath();
@@ -1115,7 +1134,7 @@ if (typeof module !== 'undefined' && module.exports){
       var dx=e.offsetX-downPt.x, dy=e.offsetY-downPt.y;
       if(Math.abs(dx)+Math.abs(dy)>4) moved=true;
       if(dragState.type==='marker' && moved){ var w=s2w(e.offsetX,e.offsetY); setCoord(dragState.which,w.x,w.y); }
-      else if(dragState.type==='pan' && moved){ view.ox=dragState.ox+dx; view.oy=dragState.oy+dy; drawMap(); }
+      else if(dragState.type==='pan' && moved){ view.ox=dragState.ox+dx; view.oy=dragState.oy+dy; requestDraw(); }
     });
     function endPtr(e){
       var wasMoved=moved, ds=dragState;
