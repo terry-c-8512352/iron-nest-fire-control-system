@@ -274,12 +274,23 @@
     </div>
 
     <div id="srcSH" style="display:none">
-      <div class="row">
-        <div><label>Target speed (m/s)</label><input id="spd" type="number" min="0" step="0.5" value="10" inputmode="decimal"></div>
-        <div><label>Heading (° compass)</label><input id="hdg" type="number" min="0" max="360" step="1" value="270" inputmode="decimal"></div>
-        <div><label>Observed at time</label><input id="shT" type="text" value="0" placeholder="0 or clock" autocomplete="off" spellcheck="false"></div>
+      <div class="grid2">
+        <div><label>Sighting position</label><input id="spos" type="text" placeholder="F5-2,3 (blank = Target A)" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+        <div><label>First seen at</label><input id="shT" type="text" value="0" placeholder="0 or 07:40:00" autocomplete="off" spellcheck="false"></div>
       </div>
-      <div class="hint">Target's current position is the <b>Target A</b> field at top, observed at this time.</div>
+      <div class="row" style="margin-top:8px">
+        <div><label>Heading (° compass)</label><input id="hdg" type="number" min="0" max="360" step="1" value="270" inputmode="decimal"></div>
+        <div><label>Target speed</label><input id="spd" type="number" min="0" step="0.1" value="19.4" inputmode="decimal"></div>
+        <div style="flex:0 0 120px"><label>Units</label>
+          <select id="spdUnit">
+            <option value="kn">knots</option>
+            <option value="kmh">km/h</option>
+            <option value="mph">mph</option>
+            <option value="ms">m/s</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint">Where the target was sighted, when you first saw it, and the course it's holding. Leave <b>Sighting position</b> blank to use <b>Target A</b> from the map.</div>
     </div>
 
     <div class="row" style="margin-top:12px">
@@ -295,6 +306,20 @@
       <tbody id="interRows"><tr><td colspan="6" class="muted">—</td></tr></tbody>
     </table>
     <div class="hint">Fire <b>now</b> and the shell meets the target at the listed aim point &amp; time. Impact time = fire time + flight time; accuracy needs TOF calibration below.</div>
+
+    <h2 style="margin:18px 0 10px">Predicted track — when to fire</h2>
+    <div class="row" style="margin-bottom:10px">
+      <div style="flex:0 0 130px"><label>Step (km)</label><input id="wpStep" type="number" min="0.1" max="10" step="0.1" value="0.5" inputmode="decimal"></div>
+      <div style="flex:0 0 130px"><label>Waypoints</label><input id="wpCount" type="number" min="1" max="50" step="1" value="10" inputmode="numeric"></div>
+      <div><div id="wpNote" class="hint" style="margin-top:22px"></div></div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Dist</th><th>At</th><th>Position</th><th>Range</th><th>Bearing</th><th>Elev</th><th>Fire&nbsp;at</th><th>Charge</th></tr></thead>
+        <tbody id="wpRows"><tr><td colspan="8" class="muted">—</td></tr></tbody>
+      </table>
+    </div>
+    <div class="hint">Each row is the target's position after another <b>step</b> along its course. <b>Fire at</b> = arrival time − shell flight time, so lay the gun and pull at that moment. Elevation and charge are the recommended (lowest) charge; alternatives in brackets.</div>
   </div>
 </div>
 
@@ -509,12 +534,89 @@ function posAt(anchorWorld, wvx, wvy, t, t0){
   return { x: anchorWorld.x + wvx*(t - t0), y: anchorWorld.y + wvy*(t - t0) };
 }
 
+// ---- Map extent (metres) — cols A–T (×1km) by rows 0–10 (×1km) ----
+var WORLD_W = 20000, WORLD_H = 11000;
+
+// ---- Speed units ----
+// The solver works in m/s; the game reports knots, so that's the default.
+var SPEED_UNITS = {
+  kn:  { label:'knots', toMS: 0.514444 },
+  kmh: { label:'km/h',  toMS: 1/3.6 },
+  mph: { label:'mph',   toMS: 0.44704 },
+  ms:  { label:'m/s',   toMS: 1 }
+};
+function speedToMS(v, unit){
+  var u = SPEED_UNITS[unit] || SPEED_UNITS.ms;
+  return (Number(v) || 0) * u.toMS;
+}
+function speedFromMS(ms, unit){
+  var u = SPEED_UNITS[unit] || SPEED_UNITS.ms;
+  return (Number(ms) || 0) / u.toMS;
+}
+
+// Range/bearing from a gun (world) to an arbitrary world point. The north-up
+// flip lives here only — duplicating it is what caused the map bugs in d574021.
+function rbWorld(gunWorld, pw, northUp){
+  var dx = pw.x - gunWorld.x, dyw = pw.y - gunWorld.y;
+  var dNorth = northUp ? dyw : -dyw;
+  return {
+    km: Math.sqrt(dx*dx + dyw*dyw)/1000,
+    bearing: normDeg(Math.atan2(dx, dNorth) * 180/Math.PI)
+  };
+}
+
+// Schedule of upcoming track positions at fixed distance intervals.
+//
+// This is the inverse of solveIntercept: the waypoint pins the range, so the
+// time of flight follows directly and no iteration is needed. Fire time is
+// simply "when the target gets there" minus "how long the shell is airborne".
+function trackWaypoints(gun, anchor, wvx, wvy, t0, opts, cfg, cal){
+  opts = opts || {};
+  var stepKm = Number(opts.stepKm) > 0 ? Number(opts.stepKm) : 0.5;
+  var count  = Math.max(1, Math.min(50, Math.round(Number(opts.count) || 10)));
+  var slopes = cfg.slopes || DEFAULT_SLOPES;
+  var speed = Math.sqrt(wvx*wvx + wvy*wvy);      // m/s
+  if(!(speed > 1e-6)) return [];                 // stationary: never reaches a waypoint
+  var g = toWorld(gun), out = [];
+
+  for(var i=1; i<=count; i++){
+    var distM = i*stepKm*1000;
+    var dt = distM/speed;
+    var t  = t0 + dt;
+    var pw = { x: anchor.x + wvx*dt, y: anchor.y + wvy*dt };
+    var rb = rbWorld(g, pw, cfg.northUp);
+    var offMap = pw.x < 0 || pw.x > WORLD_W || pw.y < 0 || pw.y > WORLD_H;
+
+    var charges = [], tooLate = false;
+    var vc = validCharges(rb.km, slopes);
+    for(var j=0; j<vc.length; j++){
+      var r = tofFor(vc[j].charge, rb.km, cal, cfg.seedPerKm);
+      var fireAt = t - r.tof;
+      if(fireAt < t0) tooLate = true;            // shell would have to leave before the sighting
+      charges.push({ charge:vc[j].charge, elevation:vc[j].elevation, tof:r.tof, src:r.src, fireAt:fireAt });
+    }
+    // tooLate only matters if EVERY charge is unshootable; the fastest shell
+    // (highest charge) is the last chance, so re-check against that one.
+    if(charges.length) tooLate = charges[charges.length-1].fireAt < t0;
+
+    out.push({
+      distKm: i*stepKm, at: t, pos: worldToPos(pw.x, pw.y), world: pw,
+      range_km: rb.km, bearing: rb.bearing,
+      offMap: offMap, tooLate: tooLate, inRange: charges.length > 0,
+      charges: charges
+    });
+  }
+  return out;
+}
+
 if (typeof module !== 'undefined' && module.exports){
   module.exports = { DEFAULT_SLOPES:DEFAULT_SLOPES, ELEV_CAP:ELEV_CAP, BAND_KM:BAND_KM,
     parsePosition:parsePosition, toWorld:toWorld, worldToPos:worldToPos, rangeBearing:rangeBearing,
     validCharges:validCharges, maxRange:maxRange, tofSeed:tofSeed, fitTOF:fitTOF, tofFor:tofFor,
     solveIntercept:solveIntercept, normDeg:normDeg, worldToPseudo:worldToPseudo,
-    parseTimeToSeconds:parseTimeToSeconds, fmtClock:fmtClock, trackVelocity:trackVelocity, posAt:posAt };
+    parseTimeToSeconds:parseTimeToSeconds, fmtClock:fmtClock, trackVelocity:trackVelocity, posAt:posAt,
+    WORLD_W:WORLD_W, WORLD_H:WORLD_H, SPEED_UNITS:SPEED_UNITS, speedToMS:speedToMS,
+    speedFromMS:speedFromMS, rbWorld:rbWorld, trackWaypoints:trackWaypoints };
 }
 // ==FCS_CORE_END==
 
@@ -528,7 +630,7 @@ if (typeof module !== 'undefined' && module.exports){
   var COLOR_A = '#2b7f92', COLOR_B = '#6d4a94', COLOR_T = '#b4471f';
   var MAP_FONT = "'Courier New',monospace";
 
-  var settings = { northUp:true, unit:'deg', seedPerKm:3 };
+  var settings = { northUp:true, unit:'deg', seedPerKm:3, speedUnit:'kn' };
   var cal = {}; // { charge: [ {range_km, tof_s} ] }
   var refs = []; // [ {name, gun, tgt, tgtB, ts} ] — newest first
   var MAX_REFS = 6; // hard cap; saving a 7th drops the oldest
@@ -555,11 +657,7 @@ if (typeof module !== 'undefined' && module.exports){
   }
 
   function fmtT(sec, isClock){ return isClock ? fmtClock(sec) : (String(+sec.toFixed(1)) + 's'); }
-  function rbFromWorld(gun, pw){
-    var g = toWorld(gun), dx = pw.x-g.x, dyw = pw.y-g.y;
-    var dN = settings.northUp ? dyw : -dyw;
-    return { km: Math.sqrt(dx*dx+dyw*dyw)/1000, bearing: normDeg(Math.atan2(dx, dN)*180/Math.PI) };
-  }
+  function rbFromWorld(gun, pw){ return rbWorld(toWorld(gun), pw, settings.northUp); }
   function currentMode(){ var r = document.querySelector('input[name=vsrc]:checked'); return r ? r.value : 'track'; }
 
   // ---- main recompute ----
@@ -647,24 +745,37 @@ if (typeof module !== 'undefined' && module.exports){
         anchor = toWorld(b); t0 = tb;
       }
     } else {
-      if(!tgt) err = 'Set a valid Target position (top) — it is the current target location.';
+      // Sighting position is its own field; blank falls back to Target A so the
+      // tap-the-map workflow still works.
+      var sposRaw = $('spos') ? $('spos').value.trim() : '';
+      var sp = sposRaw ? parsePosition(sposRaw) : tgt;
+      if($('spos')) $('spos').classList.toggle('bad', sposRaw !== '' && !sp);
+      if(!sp) err = sposRaw
+        ? 'Sighting position is not a valid grid reference.'
+        : 'Set a Sighting position, or a valid Target A to fall back on.';
       else {
-        var spd = Math.max(0, Number($('spd').value)||0), hdg = Number($('hdg').value)||0;
+        var spdMS = Math.max(0, speedToMS($('spd').value, settings.speedUnit));
+        var hdg = Number($('hdg').value)||0;
         var to = parseTimeToSeconds($('shT').value) || { sec:0, isClock:false };
         isClock = to.isClock;
-        var br = hdg*Math.PI/180, vE = spd*Math.sin(br), vN = spd*Math.cos(br);
-        vel = { speed: spd, heading: normDeg(hdg), wvx: vE, wvy: settings.northUp ? vN : -vN };
-        anchor = toWorld(tgt); t0 = to.sec;
+        var br = hdg*Math.PI/180, vE = spdMS*Math.sin(br), vN = spdMS*Math.cos(br);
+        vel = { speed: spdMS, heading: normDeg(hdg), wvx: vE, wvy: settings.northUp ? vN : -vN };
+        anchor = toWorld(sp); t0 = to.sec;
       }
     }
 
     if(err){
       $('derived').textContent = $('predOut').textContent = '';
       $('interRows').innerHTML = '<tr><td colspan="6" class="err">'+err+'</td></tr>';
+      $('wpRows').innerHTML = '<tr><td colspan="8" class="err">'+err+'</td></tr>';
+      if($('wpNote')) $('wpNote').textContent = '';
       return;
     }
 
-    $('derived').innerHTML = 'Track: <b>'+vel.speed.toFixed(1)+' m/s</b> on heading <b>'+fmtBearing(vel.heading)+'</b>'+
+    var uLabel = (SPEED_UNITS[settings.speedUnit]||SPEED_UNITS.ms).label;
+    $('derived').innerHTML = 'Track: <b>'+speedFromMS(vel.speed, settings.speedUnit).toFixed(1)+' '+uLabel+'</b>'+
+      (settings.speedUnit==='ms' ? '' : ' <span class="muted">('+vel.speed.toFixed(1)+' m/s)</span>')+
+      ' on heading <b>'+fmtBearing(vel.heading)+'</b>'+
       (vel.speed < 1e-6 ? ' <span class="muted">(stationary)</span>' : '');
 
     // fire time (blank = anchor time)
@@ -694,6 +805,52 @@ if (typeof module !== 'undefined' && module.exports){
              '</td><td>'+sol.t.toFixed(1)+'s</td><td>'+fmtT(impact, isClock)+est+'</td></tr>';
     }
     $('interRows').innerHTML = any ? out : '<tr><td colspan="6" class="err">No intercept — target out of range on every charge at fire time.</td></tr>';
+
+    renderWaypoints(gun, anchor, vel, t0, isClock);
+  }
+
+  // Schedule of upcoming positions with the moment to fire at each.
+  function renderWaypoints(gun, anchor, vel, t0, isClock){
+    if(!$('wpRows')) return;
+    var note = $('wpNote');
+    var stepKm = Number($('wpStep').value), count = Number($('wpCount').value);
+    if(!(stepKm > 0)) stepKm = 0.5;
+    if(!(count >= 1)) count = 10;
+
+    var wps = trackWaypoints(gun, anchor, vel.wvx, vel.wvy, t0, { stepKm:stepKm, count:count }, cfg(), cal);
+    if(!wps.length){
+      $('wpRows').innerHTML = '<tr><td colspan="8" class="muted">Target is stationary — no track to predict.</td></tr>';
+      if(note) note.textContent = '';
+      return;
+    }
+    if(note){
+      var legTime = (stepKm*1000)/vel.speed;
+      note.innerHTML = 'Every <b>'+stepKm+' km</b> ≈ <b>'+legTime.toFixed(0)+'s</b> of travel.';
+    }
+
+    var rows = '';
+    for(var i=0;i<wps.length;i++){
+      var w = wps[i];
+      var posCell = esc(w.pos) + (w.offMap ? ' <span class="muted">(off map)</span>' : '');
+      if(!w.inRange){
+        rows += '<tr class="muted"><td>'+w.distKm.toFixed(1)+'km</td><td>'+fmtT(w.at,isClock)+'</td><td>'+posCell+
+                '</td><td>'+w.range_km.toFixed(2)+'km</td><td>'+fmtBearing(w.bearing)+
+                '</td><td colspan="3" class="err">out of range</td></tr>';
+        continue;
+      }
+      var best = w.charges[0];
+      var alts = w.charges.slice(1).map(function(c){ return c.charge; });
+      var altTxt = alts.length ? ' <span class="muted">(+'+alts.join(',')+')</span>' : '';
+      var est = best.src==='seed' ? ' <span class="pill est">EST</span>' : '';
+      var fireCell = w.tooLate
+        ? '<span class="warn" title="Even the fastest shell cannot arrive in time">too late</span>'
+        : fmtT(best.fireAt, isClock);
+      rows += '<tr><td>'+w.distKm.toFixed(1)+'km</td><td>'+fmtT(w.at,isClock)+'</td><td>'+posCell+
+              '</td><td>'+w.range_km.toFixed(2)+'km</td><td>'+fmtBearing(w.bearing)+
+              '</td><td>'+fmtElev(best.elevation)+'</td><td>'+fireCell+est+
+              '</td><td>C'+best.charge+altTxt+'</td></tr>';
+    }
+    $('wpRows').innerHTML = rows;
   }
 
   // ---- calibration UI ----
@@ -747,9 +904,13 @@ if (typeof module !== 'undefined' && module.exports){
   $('setSeed').oninput = function(){ settings.seedPerKm = Number(this.value)||3; saveSettings(); compute(); };
 
   // ---- inputs ----
-  ['gun','tgt','tgtB','spd','hdg','s1p','s1t','s2p','s2t','shT','fireT','predT'].forEach(function(id){
+  ['gun','tgt','tgtB','spd','hdg','spos','s1p','s1t','s2p','s2t','shT','fireT','predT','wpStep','wpCount'].forEach(function(id){
     var e = $(id); if(e) e.addEventListener('input', compute);
   });
+  if($('spdUnit')){
+    $('spdUnit').value = settings.speedUnit;
+    $('spdUnit').onchange = function(){ settings.speedUnit = this.value; saveSettings(); compute(); };
+  }
   $('moveOn').addEventListener('change', function(){ $('moveBody').style.display = this.checked ? 'block' : 'none'; compute(); });
 
   // ---- second target ----
@@ -897,6 +1058,35 @@ if (typeof module !== 'undefined' && module.exports){
     ok('parseTime 12:30:30 = 45030s clock', tt.sec===45030 && tt.isClock===true, tt&&tt.sec);
     var ts2 = parseTimeToSeconds('45');
     ok('parseTime "45" = 45s (not clock)', ts2.sec===45 && ts2.isClock===false, ts2&&ts2.sec);
+
+    // speed units
+    ok('19.4 knots = 9.980 m/s', near(speedToMS(19.4,'kn'), 9.98021, 1e-4), speedToMS(19.4,'kn'));
+    ok('36 km/h = 10 m/s', near(speedToMS(36,'kmh'), 10, 1e-9), speedToMS(36,'kmh'));
+    ok('m/s passes through', near(speedToMS(12.5,'ms'), 12.5, 1e-9), speedToMS(12.5,'ms'));
+    ok('knots round-trip', near(speedFromMS(speedToMS(19.4,'kn'),'kn'), 19.4, 1e-9), speedFromMS(speedToMS(19.4,'kn'),'kn'));
+
+    // track waypoints — gun at A0, target 5km East heading further East at 10 m/s
+    var wgun = parsePosition('A0-0,0');
+    var wanchor = toWorld(parsePosition('F0-0,0'));   // 5km East of gun
+    var wps = trackWaypoints(wgun, wanchor, 10, 0, 100, {stepKm:0.5, count:10}, cfgT, {});
+    ok('10 waypoints returned', wps.length===10, wps.length);
+    ok('first waypoint 0.5km along track', near(wps[0].distKm,0.5,1e-9), wps[0].distKm);
+    ok('waypoint 1 at t0+50s (0.5km @10m/s)', near(wps[0].at,150,1e-9), wps[0].at);
+    ok('waypoint 10 at t0+500s', near(wps[9].at,600,1e-9), wps[9].at);
+    ok('waypoint 1 is 5.5km from gun', near(wps[0].range_km,5.5,1e-9), wps[0].range_km);
+    ok('fleeing East → range grows each step', wps[9].range_km > wps[0].range_km, wps[0].range_km+'→'+wps[9].range_km);
+    // fire time = arrival minus that charge's flight time
+    var w1 = wps[0], c1 = w1.charges[0];
+    ok('fireAt = arrival − TOF', near(c1.fireAt, w1.at - c1.tof, 1e-9), c1.fireAt+' vs '+(w1.at-c1.tof));
+    ok('waypoint charge matches validCharges', c1.charge===validCharges(w1.range_km)[0].charge, c1.charge);
+    ok('stationary target → no waypoints', trackWaypoints(wgun, wanchor, 0, 0, 0, {stepKm:0.5,count:10}, cfgT, {}).length===0, 'n');
+    // consecutive waypoints are exactly stepKm apart along the track
+    var d12 = Math.sqrt(Math.pow(wps[1].world.x-wps[0].world.x,2)+Math.pow(wps[1].world.y-wps[0].world.y,2));
+    ok('consecutive waypoints 500m apart', near(d12,500,1e-6), d12);
+    // rbWorld agrees with rangeBearing for the same two points
+    var rbA = rangeBearing(wgun, parsePosition('F0-0,0'), true);
+    var rbB = rbWorld(toWorld(wgun), wanchor, true);
+    ok('rbWorld matches rangeBearing', near(rbA.km,rbB.km,1e-9)&&near(rbA.bearing,rbB.bearing,1e-9), rbB.km+'/'+rbB.bearing);
     ok('fmtClock(45030) = 12:30:30', fmtClock(45030)==='12:30:30', fmtClock(45030));
     var pseudo = worldToPseudo(10100,7800);
     ok('worldToPseudo round-trips', toWorld(pseudo).x===10100 && toWorld(pseudo).y===7800, JSON.stringify(toWorld(pseudo)));
@@ -910,7 +1100,7 @@ if (typeof module !== 'undefined' && module.exports){
   function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
   function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
 
-  var WORLD_W = 20000, WORLD_H = 11000;   // metres — cols A–T (×1km) by rows 0–10 (×1km)
+  // WORLD_W / WORLD_H come from the core block above.
   var canvas = $('map');
   var ctx = (canvas && canvas.getContext) ? canvas.getContext('2d') : null;
   var dpr = Math.max(1, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);

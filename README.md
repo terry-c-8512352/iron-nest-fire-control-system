@@ -59,8 +59,8 @@ each with its own coloured line and live range/bearing on the map.
 
 - The map's place selector is **Gun / Target A / Target B**; tapping empty space cycles
   Gun → Target A → Target B, so three taps sets the whole two-shot problem.
-- The moving-target intercept still works from the single gun (its speed+heading mode uses
-  Target A as the current position).
+- The moving-target intercept still works from the single gun (its speed+heading mode has
+  its own Sighting position field, falling back to Target A when left blank).
 - Untick Second target to go back to a single target.
 
 ## Saved references
@@ -107,7 +107,8 @@ formula already does.)
 
 ## Moving-target intercept
 
-Enable **Moving Target**. There are two ways to describe the target's motion:
+Enable **Moving Target**. There are two ways to describe the target's motion, and both
+feed the same predictions:
 
 ### Two sightings (recommended)
 
@@ -125,9 +126,33 @@ sighting times must differ; order doesn't matter (it uses the later one as the a
 
 ### Speed + heading
 
-If you already know the target's **speed (m/s)** and **heading (°)**, switch to this mode.
-The target's current spot is the top **Target** field, observed at the "Observed at time"
-you give. Everything else (predict, intercept, impact time) works the same.
+If you already know the target's course, switch to this mode and enter four things:
+
+- **Sighting position** — where you saw it. Leave blank to use **Target A** from the map.
+- **First seen at** — plain seconds or a clock (`07:40:00`).
+- **Heading** — the compass course it's holding.
+- **Speed** — with a unit picker: **knots** (default), km/h, mph or m/s. So `19.4` and
+  *knots* is what you'd read off the game. Your choice is remembered between sessions.
+
+### Predicted track — when to fire
+
+Below the intercept table is a schedule of where the target will be, stepping along its
+course in fixed distance intervals — **0.5 km × 10 waypoints** by default, both adjustable.
+
+For every waypoint you get the arrival time, grid position, range, bearing, elevation, the
+recommended charge (alternatives in brackets), and — the useful bit — the **time to fire**:
+
+```
+Fire at  =  arrival time  −  shell flight time
+```
+
+So you can lay the gun ahead of time and pull the trigger on the clock, instead of trying
+to solve a lead in your head. Rows that can't be shot are called out rather than quietly
+given wrong numbers: **out of range** past the gun's 30 km, **off map** once the track
+leaves the grid, and **too late** when even the fastest shell can't get there in time.
+
+This works from *either* input mode — two sightings or speed + heading — since both end up
+describing the same track.
 
 ### Fire-at time
 
