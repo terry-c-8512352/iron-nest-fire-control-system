@@ -65,15 +65,22 @@ each with its own coloured line and live range/bearing on the map.
 
 ## Saved references
 
-Open **Saved references** to store a firing setup and recall it later — handy for known
-targets (HQ, bridges, chokepoints).
+Saved references live in the **left-hand rail**, always on screen as a stack of cards —
+handy for known targets (HQ, bridges, chokepoints).
 
-- Type a name and hit **Save current**; it snapshots the gun, Target A and Target B (if
-  enabled). Each saved row shows the target, range, bearing and recommended charge at a
-  glance.
+- Type a name and hit **Save**; it snapshots the gun, Target A and Target B (if enabled).
+- Each card shows the target grid and its **range, bearing and elevation** as three
+  read-at-a-glance figures, plus the recommended charge — so a known target is a glance,
+  not a re-entry.
+- A two-target reference gets **two** stat rows on the one card, labelled **A** and **B**.
 - **Load** drops the positions straight back onto the map (re-enabling the second target
   if the reference had one) and recomputes. **✕** deletes it.
+- Cards follow your **Settings** — switch bearing to mils and they update with everything
+  else.
 - References persist in the browser between sessions.
+
+On narrow screens (phones) the rail drops below the main column instead of sitting beside
+it, so nothing is squeezed.
 
 ## The ballistics (from the in-game Firing Table)
 
