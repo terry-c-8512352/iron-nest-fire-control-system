@@ -629,6 +629,10 @@ if (typeof module !== 'undefined' && module.exports){
   // dots on the dark steel panels.
   var COLOR_A = '#2b7f92', COLOR_B = '#6d4a94', COLOR_T = '#b4471f';
   var MAP_FONT = "'Courier New',monospace";
+  // Plotted track for the map, cached by computeIntercept. drawMap runs every
+  // pan frame, so the waypoints (and their TOF regressions) are worked out once
+  // on input change, not per frame.
+  var trackOverlay = null;
 
   var settings = { northUp:true, unit:'deg', seedPerKm:3, speedUnit:'kn' };
   var cal = {}; // { charge: [ {range_km, tof_s} ] }
@@ -715,12 +719,13 @@ if (typeof module !== 'undefined' && module.exports){
     // ---- moving-target intercept (single gun; speed+heading mode uses Target A) ----
     if($('moveOn').checked){
       if(!gun){
+        trackOverlay = null;
         $('derived').textContent = $('predOut').textContent = '';
         $('interRows').innerHTML = '<tr><td colspan="6" class="err">Enter a valid gun position.</td></tr>';
       } else {
         computeIntercept(gun, tgt);
       }
-    }
+    } else trackOverlay = null;
 
     drawMap();
   }
@@ -765,6 +770,7 @@ if (typeof module !== 'undefined' && module.exports){
     }
 
     if(err){
+      trackOverlay = null;
       $('derived').textContent = $('predOut').textContent = '';
       $('interRows').innerHTML = '<tr><td colspan="6" class="err">'+err+'</td></tr>';
       $('wpRows').innerHTML = '<tr><td colspan="8" class="err">'+err+'</td></tr>';
@@ -819,10 +825,19 @@ if (typeof module !== 'undefined' && module.exports){
 
     var wps = trackWaypoints(gun, anchor, vel.wvx, vel.wvy, t0, { stepKm:stepKm, count:count }, cfg(), cal);
     if(!wps.length){
+      trackOverlay = null;
       $('wpRows').innerHTML = '<tr><td colspan="8" class="muted">Target is stationary — no track to predict.</td></tr>';
       if(note) note.textContent = '';
       return;
     }
+
+    // hand the plotted course to the map (geometry only — no solver state)
+    trackOverlay = {
+      anchor: anchor,
+      pts:    wps.map(function(w){ return w.world; }),
+      ok:     wps.map(function(w){ return w.inRange && !w.tooLate; }),
+      labels: wps.map(function(w){ return w.distKm.toFixed(1); })
+    };
     if(note){
       var legTime = (stepKm*1000)/vel.speed;
       note.innerHTML = 'Every <b>'+stepKm+' km</b> ≈ <b>'+legTime.toFixed(0)+'s</b> of travel.';
@@ -1179,6 +1194,57 @@ if (typeof module !== 'undefined' && module.exports){
     ctx.strokeStyle='rgba(215,163,67,0.55)'; ctx.lineWidth=1; ctx.stroke();
     ctx.fillStyle='#efdfba'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,x,y); ctx.restore();
   }
+  // The predicted course, plotted on the chart: a pencilled track line with a
+  // fix mark at each waypoint. Filled marks are still shootable, hollow ones
+  // are out of range or too late — so the shootable stretch reads at a glance.
+  function drawTrack(){
+    if(!trackOverlay || !trackOverlay.pts.length) return;
+    var pts = trackOverlay.pts, a = trackOverlay.anchor;
+    var s0 = w2s(a.x, a.y);
+    var sL = w2s(pts[pts.length-1].x, pts[pts.length-1].y);
+    var ang = Math.atan2(sL.y - s0.y, sL.x - s0.x);
+
+    ctx.save();
+    ctx.strokeStyle='rgba(74,54,24,0.72)'; ctx.lineWidth=1.4; ctx.setLineDash([7,5]);
+    ctx.beginPath(); ctx.moveTo(s0.x,s0.y); ctx.lineTo(sL.x,sL.y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // arrowhead showing which way it's running
+    ctx.fillStyle='rgba(74,54,24,0.88)';
+    ctx.beginPath();
+    ctx.moveTo(sL.x, sL.y);
+    ctx.lineTo(sL.x - 9*Math.cos(ang-0.36), sL.y - 9*Math.sin(ang-0.36));
+    ctx.lineTo(sL.x - 9*Math.cos(ang+0.36), sL.y - 9*Math.sin(ang+0.36));
+    ctx.closePath(); ctx.fill();
+
+    // only label when the ticks are far enough apart to stay readable
+    var spacing = pts.length>1 ? dist(w2s(pts[0].x,pts[0].y), w2s(pts[1].x,pts[1].y)) : 999;
+    var every = spacing >= 34 ? 1 : (spacing >= 18 ? 2 : 5);
+    var tx = Math.cos(ang+Math.PI/2)*5, ty = Math.sin(ang+Math.PI/2)*5;
+
+    ctx.font='bold 9px '+MAP_FONT; ctx.textAlign='center'; ctx.textBaseline='middle';
+    for(var i=0;i<pts.length;i++){
+      var p = w2s(pts[i].x, pts[i].y);
+      // pale underlay first so ticks stay legible over grid lines and creases
+      ctx.strokeStyle='rgba(247,238,214,0.75)'; ctx.lineWidth=3.5;
+      ctx.beginPath(); ctx.moveTo(p.x-tx,p.y-ty); ctx.lineTo(p.x+tx,p.y+ty); ctx.stroke();
+      ctx.strokeStyle=COLOR_T; ctx.lineWidth=1.6;
+      ctx.beginPath(); ctx.moveTo(p.x-tx,p.y-ty); ctx.lineTo(p.x+tx,p.y+ty); ctx.stroke();
+
+      ctx.beginPath(); ctx.arc(p.x,p.y,2.6,0,Math.PI*2);
+      if(trackOverlay.ok[i]){ ctx.fillStyle=COLOR_T; ctx.fill(); }
+      else { ctx.strokeStyle=COLOR_T; ctx.lineWidth=1.2; ctx.stroke(); }
+
+      if((i+1) % every === 0){
+        var lx = p.x + tx*2.4, ly = p.y + ty*2.4;
+        ctx.lineWidth=3; ctx.strokeStyle='rgba(247,238,214,0.9)';
+        ctx.strokeText(trackOverlay.labels[i], lx, ly);
+        ctx.fillStyle='#4a3618'; ctx.fillText(trackOverlay.labels[i], lx, ly);
+      }
+    }
+    ctx.restore();
+  }
+
   function drawMarker(w,color,tag){
     var p=w2s(w.x,w.y);
     ctx.save();
@@ -1271,6 +1337,11 @@ if (typeof module !== 'undefined' && module.exports){
     }
     if(gun&&tgt) fireLine(tgt, COLOR_T);
     if(gun&&tgtB) fireLine(tgtB, COLOR_B);
+    // under the markers so those stay on top, and clipped to the sheet — the
+    // track can run off the grid, and the plot belongs on the paper
+    ctx.save(); ctx.beginPath(); ctx.rect(left,top,sw,sh); ctx.clip();
+    drawTrack();
+    ctx.restore();
     if(gun) drawMarker(toWorld(gun), COLOR_A, 'GUN');
     if(tgt) drawMarker(toWorld(tgt), COLOR_T, bOn?'T-A':'TGT');
     if(tgtB) drawMarker(toWorld(tgtB), COLOR_B, 'T-B');

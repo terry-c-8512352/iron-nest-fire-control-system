@@ -154,6 +154,12 @@ leaves the grid, and **too late** when even the fastest shell can't get there in
 This works from *either* input mode — two sightings or speed + heading — since both end up
 describing the same track.
 
+The course is also **plotted on the map**: a pencilled track line from the sighting, with a
+fix mark and distance label at every waypoint and an arrowhead showing which way it's
+running. **Filled** marks are still shootable; **hollow** ones are out of range or too
+late — so the stretch you can actually hit reads at a glance. The plot is clipped to the
+paper, so a track running off the grid stops at the sheet edge.
+
 ### Fire-at time
 
 Leave *"Fire at time"* blank to fire **now** (at the latest sighting / observation).
