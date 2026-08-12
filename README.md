@@ -154,6 +154,12 @@ leaves the grid, and **too late** when even the fastest shell can't get there in
 This works from *either* input mode — two sightings or speed + heading — since both end up
 describing the same track.
 
+**Click any predicted position** — an aim point in the intercept table, or a waypoint in
+the track table — to save it straight to the reference rail as a card, named for what it
+was (`Aim C4 07:40:22`, `Track 1.5km 07:42:30`). The card carries its own range, bearing
+and elevation from your current gun, and **Load** puts it back on the map. Positions that
+have run off the grid aren't offered, and the usual 6-card cap applies.
+
 The course is also **plotted on the map**: a pencilled track line from the sighting, with a
 fix mark and distance label at every waypoint and an arrowhead showing which way it's
 running. **Filled** marks are still shootable; **hollow** ones are out of range or too

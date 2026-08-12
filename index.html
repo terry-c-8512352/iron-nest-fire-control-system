@@ -188,6 +188,15 @@
   .rc-chg{font:11px/1 var(--mono);color:var(--dim)}
   .rc-chg b{color:var(--accent);font-size:12px}
   .rc-foot button{padding:6px 12px;font-size:12px}
+  /* predicted positions double as "save this as a reference" buttons */
+  .posSave{
+    background:none;border:none;box-shadow:none;padding:0;margin:0;cursor:pointer;
+    font:inherit;color:var(--ink);letter-spacing:inherit;text-transform:none;
+    border-bottom:1px dotted var(--line2);border-radius:0;
+  }
+  .posSave:hover{color:var(--accent);border-bottom-color:var(--accent);background:none}
+  .posSave:active{transform:none}
+  .posSave.saved{color:#8a9a48;border-bottom-color:transparent}
 </style>
 </head>
 <body>
@@ -807,7 +816,8 @@ if (typeof module !== 'undefined' && module.exports){
       any = true;
       var impact = tFire + sol.t;
       var est = sol.src==='seed' ? ' <span class="pill est">EST</span>' : '';
-      out += '<tr><td>'+k+'</td><td>'+sol.point+'</td><td>'+fmtBearing(sol.bearing)+'</td><td>'+fmtElev(sol.elevation)+
+      var aimCell = posSaveCell(sol.point, 'Aim C'+k+' '+fmtT(impact, isClock), true);
+      out += '<tr><td>'+k+'</td><td>'+aimCell+'</td><td>'+fmtBearing(sol.bearing)+'</td><td>'+fmtElev(sol.elevation)+
              '</td><td>'+sol.t.toFixed(1)+'s</td><td>'+fmtT(impact, isClock)+est+'</td></tr>';
     }
     $('interRows').innerHTML = any ? out : '<tr><td colspan="6" class="err">No intercept — target out of range on every charge at fire time.</td></tr>';
@@ -846,7 +856,9 @@ if (typeof module !== 'undefined' && module.exports){
     var rows = '';
     for(var i=0;i<wps.length;i++){
       var w = wps[i];
-      var posCell = esc(w.pos) + (w.offMap ? ' <span class="muted">(off map)</span>' : '');
+      // off-map positions fall outside the grid letters, so they can't be saved
+      var posCell = posSaveCell(w.pos, 'Track '+w.distKm.toFixed(1)+'km '+fmtT(w.at,isClock), !w.offMap)
+                  + (w.offMap ? ' <span class="muted">(off map)</span>' : '');
       if(!w.inRange){
         rows += '<tr class="muted"><td>'+w.distKm.toFixed(1)+'km</td><td>'+fmtT(w.at,isClock)+'</td><td>'+posCell+
                 '</td><td>'+w.range_km.toFixed(2)+'km</td><td>'+fmtBearing(w.bearing)+
@@ -997,14 +1009,46 @@ if (typeof module !== 'undefined' && module.exports){
     compute();
     if(typeof window !== 'undefined' && window.scrollTo){ try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); } }
   }
+  // Single place references get added, so the newest-first order and the cap
+  // rule live in one spot rather than at every call site.
+  function addRef(name, gun, tgt, tgtB){
+    refs.unshift({ name:name, gun:gun, tgt:tgt, tgtB:tgtB||'', ts:Date.now() });
+    if(refs.length > MAX_REFS) refs.length = MAX_REFS; // newest first, so this drops the oldest
+    saveRefs(); renderRefs();
+  }
+
   if($('refSave')) $('refSave').onclick = function(){
     var t = $('tgt').value.trim();
     if(!parsePosition(t)){ alert('Set a valid Target A before saving a reference.'); return; }
     var name = ($('refName').value || '').trim() || ('Target '+t);
-    refs.unshift({ name:name, gun:$('gun').value.trim(), tgt:t, tgtB: (tgtBOn() && $('tgtB')) ? $('tgtB').value.trim() : '', ts:Date.now() });
-    if(refs.length > MAX_REFS) refs.length = MAX_REFS; // newest first, so this drops the oldest
-    saveRefs(); $('refName').value=''; renderRefs();
+    addRef(name, $('gun').value.trim(), t, (tgtBOn() && $('tgtB')) ? $('tgtB').value.trim() : '');
+    $('refName').value='';
   };
+
+  // Save a predicted position straight off the intercept / track tables.
+  function saveRefFromPos(pos, name, btn){
+    var gunS = $('gun').value.trim();
+    if(!parsePosition(gunS)){ alert('Set a valid gun position before saving a reference.'); return; }
+    if(!parsePosition(pos)){ alert('That predicted position is not a valid grid reference.'); return; }
+    addRef(name, gunS, pos, '');
+    if(btn){
+      var prev = btn.textContent;
+      btn.textContent = '✓ saved'; btn.classList.add('saved');
+      setTimeout(function(){ btn.textContent = prev; btn.classList.remove('saved'); }, 1300);
+    }
+  }
+  // One delegated listener, so the tables can be re-rendered freely.
+  if($('moveBody')) $('moveBody').addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('.posSave') : null;
+    if(!b) return;
+    saveRefFromPos(b.getAttribute('data-pos'), b.getAttribute('data-name'), b);
+  });
+  // Position cell rendered as a save button; plain text when it can't be saved.
+  function posSaveCell(pos, name, saveable){
+    if(!saveable) return esc(pos);
+    return '<button type="button" class="posSave" data-pos="'+esc(pos)+'" data-name="'+esc(name)+
+           '" title="Save '+esc(pos)+' as a reference card">'+esc(pos)+'</button>';
+  }
   Array.prototype.forEach.call(document.querySelectorAll('input[name=vsrc]'), function(r){
     r.addEventListener('change', function(){
       $('srcTrack').style.display = currentMode()==='track' ? 'block' : 'none';
