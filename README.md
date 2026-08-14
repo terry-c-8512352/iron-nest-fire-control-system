@@ -54,12 +54,18 @@ Examples: `F5-5,5`, `K7-1,8`, `A1-0,0`.
 **You don't have to type the punctuation.** The separators are fixed by the digits, so
 the position fields fill them in as you type — `a111` lays itself out as `A1-1,1`, `k718`
 as `K7-1,8`. The letter is capitalised for you, typing `-` and `,` yourself still works,
-and backspace walks back through the grid a character at a time.
+and backspace walks back through the grid a character at a time — row 10 included.
+
+**Typing a letter starts a fresh grid**, so you can lay a new position over a field that
+already holds one without clearing it first: put the cursor at the end of `F5-5,5`, type
+`k718`, and you get `K7-1,8`. That also means a mistyped column can be fixed by typing the
+right letter.
 
 Row 10 is the one case the app can't read until you've finished: `a101` shows as `A1-0,1`,
 and the moment you type the last digit of `a1011` it re-reads as `A10-1,1`. Decimal aim
-points are left exactly as typed, and editing in the middle of a grid you've already
-entered is never reformatted under your cursor.
+points are left exactly as typed, editing in the middle of a grid you've already entered is
+never reformatted under your cursor, and a digit too many is shown and flagged as an
+invalid grid rather than quietly dropped.
 
 ## Two targets (two shells from one gun)
 

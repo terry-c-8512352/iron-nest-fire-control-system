@@ -1009,16 +1009,25 @@ if (typeof module !== 'undefined' && module.exports){
   function autoGrid(raw){
     if(raw.indexOf('.') >= 0) return raw;   // decimal aim points are typed by hand
     var s = raw.toUpperCase();
-    var letter = (s.match(/[A-T]/) || [''])[0];
-    if(!letter) return raw;                 // nothing to anchor the format to yet
-    var digits = s.replace(/[^0-9]/g, '');
-    var rowLen = (digits.slice(0,2) === '10' && digits.length >= 4) ? 2 : 1;
-    var rest = digits.slice(rowLen, rowLen+2); // trailing junk is dropped, not shown
+    // Anchor on the LAST column letter: typing a letter onto a grid that is
+    // already there starts a fresh one rather than being swallowed by the old.
+    var at = s.search(/[A-T](?![\s\S]*[A-T])/);
+    if(at < 0) return raw;                  // nothing to anchor the format to yet
+    var letter = s.charAt(at), after = s.slice(at+1);
+    var digits = after.replace(/[^0-9]/g, '');
+    // Row 10 is two digits. Trust a separator that is already sitting after the
+    // "10" — deleting back through "A10-1,1" must never re-read it as "A1-0,1" —
+    // and hold a bare "10" as the row until the next digit settles it.
+    var row10 = digits.slice(0,2) === '10' &&
+                (/^10[^0-9]/.test(after) || digits.length === 2 || digits.length >= 4);
+    var rowLen = row10 ? 2 : 1;
+    if(digits.length > rowLen + 2) return raw; // more than a grid holds: show it, don't eat it
+    var rest = digits.slice(rowLen);
     var out = letter + digits.slice(0, rowLen);
     if(rest.length >= 1) out += '-' + rest.charAt(0);
-    else if(/-\s*$/.test(s)) out += '-';    // keep a separator that was just typed
+    else if(/-\s*$/.test(after)) out += '-'; // keep a separator that was just typed
     if(rest.length >= 2) out += ',' + rest.charAt(1);
-    else if(rest.length === 1 && /,\s*$/.test(s)) out += ',';
+    else if(rest.length === 1 && /,\s*$/.test(after)) out += ',';
     return out;
   }
   // Only reformats while you're typing at the end — an edit mid-string is left
@@ -1246,19 +1255,29 @@ if (typeof module !== 'undefined' && module.exports){
 
     // typing a grid straight through — separators fill themselves in
     function typed(keys){ var v=''; for(var i=0;i<keys.length;i++) v = autoGrid(v + keys.charAt(i)); return v; }
+    function deleted(v){ var out=[]; while(v.length){ v = autoGrid(v.slice(0,-1)); out.push(v); } return out.join('|'); }
     ok('type "a111" → A1-1,1', typed('a111')==='A1-1,1', typed('a111'));
-    ok('type "f5534" → F5-5,3', typed('f5534')==='F5-5,3', typed('f5534'));
+    ok('type "f553" → F5-5,3', typed('f553')==='F5-5,3', typed('f553'));
     ok('type "t1099" → T10-9,9', typed('t1099')==='T10-9,9', typed('t1099'));
     ok('"a101" reads as A1-0,1', typed('a101')==='A1-0,1', typed('a101'));
     ok('5th digit re-reads it as row 10', typed('a1011')==='A10-1,1', typed('a1011'));
     ok('typed separators still work', typed('F5-3,4')==='F5-3,4', typed('F5-3,4'));
     ok('already-formatted input is left alone', autoGrid('K7-1,8')==='K7-1,8', autoGrid('K7-1,8'));
-    ok('extra digits are dropped', typed('a1119')==='A1-1,1', typed('a1119'));
     ok('decimals are left as typed', autoGrid('F5-3.5,4.2')==='F5-3.5,4.2', autoGrid('F5-3.5,4.2'));
     ok('bare digits wait for a letter', autoGrid('5')==='5', autoGrid('5'));
     ok('backspace over the comma', autoGrid('A1-1,')==='A1-1,', autoGrid('A1-1,'));
     ok('backspace to the dash', autoGrid('A1-')==='A1-', autoGrid('A1-'));
     ok('every typed grid parses', !!parsePosition(typed('a111')) && !!parsePosition(typed('t1099')), typed('t1099'));
+    // deleting must never re-read a grid as a different square (row 10)
+    ok('backspace through A10-1,1 drops one char at a time',
+       deleted('A10-1,1')==='A10-1,|A10-1|A10-|A10|A1|A|', deleted('A10-1,1'));
+    ok('backspace through K7-1,8 drops one char at a time',
+       deleted('K7-1,8')==='K7-1,|K7-1|K7-|K7|K|', deleted('K7-1,8'));
+    // typing onto a grid that is already there starts a fresh one
+    ok('a letter starts over', autoGrid('F5-5,5K')==='K', autoGrid('F5-5,5K'));
+    ok('the column letter can be corrected', autoGrid('FK')==='K', autoGrid('FK'));
+    ok('surplus digits are shown, not eaten', autoGrid('A1-1,19')==='A1-1,19', autoGrid('A1-1,19'));
+    ok('surplus digits read as invalid', parsePosition('A1-1,19')===null, parsePosition('A1-1,19'));
 
     // ballistics vs firing table
     ok('k3 @10.1km = 40.40°', near(validCharges(10.1)[0].elevation, 40.40, 1e-6), validCharges(10.1)[0].elevation);
