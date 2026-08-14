@@ -24,7 +24,8 @@ references are stored on your own device and are never shared or uploaded.
 
 ## Picking positions — the map (fastest)
 
-Instead of typing coordinates, use the map at the top of **Positions**:
+Instead of typing coordinates, use the map at the top of **Positions**. It's the whole
+game map — **20 km × 10 km**, columns `A`–`T` by rows `1`–`10`, drawn to scale:
 
 - **Tap** an empty spot to drop the **Gun** — it then auto-switches to **Target**, so a
   second tap places the target. One-two and you have a solution.
@@ -44,11 +45,11 @@ range and bearing live.
 ```
 
 - **Col** — map column, `A`–`T`
-- **Row** — map row, `0`–`10`
+- **Row** — map row, `1`–`10` (`1` is the bottom row of the map)
 - **subX,subY** — subgrid cell inside that 1 km square, `0`–`9` (each = 100 m)
 - Decimals allowed for finer aim, e.g. `F5-3.5,4.2`
 
-Examples: `F5-5,5`, `K7-1,8`, `A0-0,0`.
+Examples: `F5-5,5`, `K7-1,8`, `A1-0,0`.
 
 ## Two targets (two shells from one gun)
 
@@ -216,8 +217,8 @@ hand-timed shot shouldn't outrank it. Overrides save locally and persist between
 ## One-time setup: check your north axis
 
 Bearing depends on which way the map's rows run. The default is **north-up**: higher row
-number is North, so **row 10 is at the top** of the map and row 0 at the bottom (matching
-the in-game map, e.g. A10 top, A0 bottom). The on-screen map is drawn the same way. Verify
+number is North, so **row 10 is at the top** of the map and row 1 at the bottom (matching
+the in-game map, e.g. A10 top, A1 bottom). The on-screen map is drawn the same way. Verify
 once:
 
 - Put a target due **East** of your gun (same row, higher column). Bearing should read
