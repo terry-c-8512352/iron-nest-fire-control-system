@@ -262,7 +262,7 @@
       <input id="tgtB" type="text" inputmode="text" placeholder="e.g. M8-4,4" value="M8-4,4" autocomplete="off" autocapitalize="characters" spellcheck="false">
     </div>
   </div>
-  <div class="hint">Format <code>&lt;Col&gt;&lt;Row&gt;-&lt;subX&gt;,&lt;subY&gt;</code> — Col A–T, Row 1–10, subgrid 0–9 (100&nbsp;m). Decimals ok: <code>F5-3.5,4.2</code>. <button id="swap" style="padding:3px 9px;font-size:12px;margin-left:6px">⇄ swap</button></div>
+  <div class="hint">Format <code>&lt;Col&gt;&lt;Row&gt;-&lt;subX&gt;,&lt;subY&gt;</code> — Col A–T, Row 1–10, subgrid 0–9 (100&nbsp;m). Just type <code>a111</code> — the <code>-</code> and <code>,</code> fill themselves in. Decimals ok: <code>F5-3.5,4.2</code>. <button id="swap" style="padding:3px 9px;font-size:12px;margin-left:6px">⇄ swap</button></div>
   <div id="posErr" class="hint err" style="display:none"></div>
 </div>
 
@@ -1001,6 +1001,39 @@ if (typeof module !== 'undefined' && module.exports){
     saveSettings(); saveRefs(); renderRefs();
   };
 
+  // ---- grid auto-format ----
+  // Type a grid straight through — "a111" lays itself out as "A1-1,1" — since the
+  // separators are fixed by the digit count: <row><subX><subY>. Row 10 is the one
+  // ambiguity: "a101" reads as A1-0,1 until a fourth digit makes it A10-1,x, which
+  // rebuilding from the raw digits on every keystroke sorts out by itself.
+  function autoGrid(raw){
+    if(raw.indexOf('.') >= 0) return raw;   // decimal aim points are typed by hand
+    var s = raw.toUpperCase();
+    var letter = (s.match(/[A-T]/) || [''])[0];
+    if(!letter) return raw;                 // nothing to anchor the format to yet
+    var digits = s.replace(/[^0-9]/g, '');
+    var rowLen = (digits.slice(0,2) === '10' && digits.length >= 4) ? 2 : 1;
+    var rest = digits.slice(rowLen, rowLen+2); // trailing junk is dropped, not shown
+    var out = letter + digits.slice(0, rowLen);
+    if(rest.length >= 1) out += '-' + rest.charAt(0);
+    else if(/-\s*$/.test(s)) out += '-';    // keep a separator that was just typed
+    if(rest.length >= 2) out += ',' + rest.charAt(1);
+    else if(rest.length === 1 && /,\s*$/.test(s)) out += ',';
+    return out;
+  }
+  // Only reformats while you're typing at the end — an edit mid-string is left
+  // alone so the caret can't jump out from under you.
+  ['gun','tgt','tgtB','spos','s1p','s2p'].forEach(function(id){
+    var e = $(id); if(!e) return;
+    e.addEventListener('input', function(){
+      if(this.selectionStart != null && this.selectionStart !== this.value.length) return;
+      var out = autoGrid(this.value);
+      if(out === this.value) return;
+      this.value = out;
+      try{ this.setSelectionRange(out.length, out.length); }catch(err){}
+    });
+  });
+
   // ---- inputs ----
   ['gun','tgt','tgtB','spd','hdg','spos','s1p','s1t','s2p','s2t','shT','fireT','predT','wpStep','wpCount'].forEach(function(id){
     var e = $(id); if(e) e.addEventListener('input', compute);
@@ -1210,6 +1243,22 @@ if (typeof module !== 'undefined' && module.exports){
     ok('map is 20km × 10km', WORLD_W===20000 && WORLD_H===10000, WORLD_W+'×'+WORLD_H);
     ok('A1→A10 is 9km North', near(rangeBearing(parsePosition('A1-0,0'),parsePosition('A10-0,0'),true).km,9,1e-9),
        rangeBearing(parsePosition('A1-0,0'),parsePosition('A10-0,0'),true).km);
+
+    // typing a grid straight through — separators fill themselves in
+    function typed(keys){ var v=''; for(var i=0;i<keys.length;i++) v = autoGrid(v + keys.charAt(i)); return v; }
+    ok('type "a111" → A1-1,1', typed('a111')==='A1-1,1', typed('a111'));
+    ok('type "f5534" → F5-5,3', typed('f5534')==='F5-5,3', typed('f5534'));
+    ok('type "t1099" → T10-9,9', typed('t1099')==='T10-9,9', typed('t1099'));
+    ok('"a101" reads as A1-0,1', typed('a101')==='A1-0,1', typed('a101'));
+    ok('5th digit re-reads it as row 10', typed('a1011')==='A10-1,1', typed('a1011'));
+    ok('typed separators still work', typed('F5-3,4')==='F5-3,4', typed('F5-3,4'));
+    ok('already-formatted input is left alone', autoGrid('K7-1,8')==='K7-1,8', autoGrid('K7-1,8'));
+    ok('extra digits are dropped', typed('a1119')==='A1-1,1', typed('a1119'));
+    ok('decimals are left as typed', autoGrid('F5-3.5,4.2')==='F5-3.5,4.2', autoGrid('F5-3.5,4.2'));
+    ok('bare digits wait for a letter', autoGrid('5')==='5', autoGrid('5'));
+    ok('backspace over the comma', autoGrid('A1-1,')==='A1-1,', autoGrid('A1-1,'));
+    ok('backspace to the dash', autoGrid('A1-')==='A1-', autoGrid('A1-'));
+    ok('every typed grid parses', !!parsePosition(typed('a111')) && !!parsePosition(typed('t1099')), typed('t1099'));
 
     // ballistics vs firing table
     ok('k3 @10.1km = 40.40°', near(validCharges(10.1)[0].elevation, 40.40, 1e-6), validCharges(10.1)[0].elevation);
