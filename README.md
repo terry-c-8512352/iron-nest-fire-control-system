@@ -71,9 +71,13 @@ handy for known targets (HQ, bridges, chokepoints).
 
 - Type a name, pick the **charge** you want the card to carry, and hit **Save**; it
   snapshots the gun, Target A and Target B (if enabled).
-- You can keep **6** at a time — the header shows how many slots are used (e.g. `4/6`).
-  Saving a 7th drops the **oldest** automatically, so the rail stays a short list of what
-  you're actually shooting at. Delete one with **✕** to free a slot deliberately.
+- You can keep **10** at a time by default — the header shows how many slots are used
+  (e.g. `4/10`). Saving past the cap drops the **oldest** automatically, so the rail stays
+  a short list of what you're actually shooting at. Delete one with **✕** to free a slot
+  deliberately.
+- **The cap is yours to set** — *Settings → Saved reference slots*, anywhere from **1 to
+  50**. Raise it if you're keeping a whole target list; lower it to keep the rail short.
+  Cutting it below what you've already saved asks before it drops the oldest cards.
 - Each card shows the target grid and its **range, bearing and elevation** as three
   read-at-a-glance figures, plus the charge it's laid for — so a known target is a glance,
   not a re-entry.
@@ -172,7 +176,7 @@ was (`Aim C4 07:40:22`, `Track 1.5km 07:42:30`). The card carries its own range,
 and elevation from your current gun, and **Load** puts it back on the map. An aim point
 saves **on its own row's charge** — click the C4 row and you get a C4 card — while a track
 waypoint saves on Auto, which is the charge that row already quotes. Positions that have
-run off the grid aren't offered, and the usual 6-card cap applies.
+run off the grid aren't offered, and the usual card cap applies.
 
 The course is also **plotted on the map**: a pencilled track line from the sighting, with a
 fix mark and distance label at every waypoint and an arrowhead showing which way it's
@@ -227,7 +231,8 @@ once:
   flips both the bearings and the map together.
 
 Settings also has an angle-unit display (degrees / 6400 NATO mils / 6000 mils) for
-bearing; elevation always shows in **degrees** to match the firing table.
+bearing (elevation always shows in **degrees** to match the firing table) and the number
+of **saved reference slots** the rail keeps.
 
 ## Verifying / self-tests
 

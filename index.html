@@ -223,7 +223,7 @@
     <button id="refSave" class="primary" title="Save current gun + target(s)">Save</button>
   </div>
   <p class="hint" style="margin:-6px 0 10px">The charge is saved on the card and can be changed there. <b>Auto</b> keeps the lowest that reaches.</p>
-  <p class="hint" id="refFull" style="display:none;margin:-6px 0 10px">Full (6 max) — saving another drops the oldest.</p>
+  <p class="hint" id="refFull" style="display:none;margin:-6px 0 10px"></p>
   <div id="refCards"></div>
 </aside>
 
@@ -378,8 +378,13 @@
         <label>TOF seed (s per km)</label>
         <input id="setSeed" type="number" min="0" step="0.1" value="3">
       </div>
+      <div>
+        <label>Saved reference slots</label>
+        <input id="setMaxRefs" type="number" min="1" max="50" step="1" value="10" inputmode="numeric">
+      </div>
     </div>
     <p class="hint">Elevation is always shown in degrees (the firing table's unit). The unit setting affects <b>bearing</b> display.</p>
+    <p class="hint">The rail holds <b id="setMaxRefsEcho">10</b> reference cards (1–50); saving past that drops the oldest. Lowering it below what you've already saved asks first.</p>
   </div>
 </details>
 
@@ -683,10 +688,16 @@ if (typeof module !== 'undefined' && module.exports){
   // on input change, not per frame.
   var trackOverlay = null;
 
-  var settings = { northUp:true, unit:'deg', seedPerKm:3, speedUnit:'kn' };
+  var settings = { northUp:true, unit:'deg', seedPerKm:3, speedUnit:'kn', maxRefs:10 };
   var cal = {}; // { charge: [ {range_km, tof_s} ] }
-  var refs = []; // [ {name, gun, tgt, tgtB, ts} ] — newest first
-  var MAX_REFS = 6; // hard cap; saving a 7th drops the oldest
+  var refs = []; // [ {name, gun, tgt, tgtB, charge, chargeB, ts} ] — newest first
+  // How many cards the rail holds, set in Settings. Saving past the cap drops
+  // the oldest, so the rail stays a short list of what you're shooting at.
+  var REFS_MIN = 1, REFS_MAX = 50;
+  function maxRefs(){
+    var n = Math.round(Number(settings.maxRefs));
+    return isFinite(n) && n > 0 ? clamp(n, REFS_MIN, REFS_MAX) : 10; // unset / junk -> default
+  }
 
   try { var s = JSON.parse(localStorage.getItem(LS_SET)); if(s) settings = Object.assign(settings, s); } catch(e){}
   try { var c = JSON.parse(localStorage.getItem(LS_CAL)); if(c) cal = c; } catch(e){}
@@ -970,6 +981,25 @@ if (typeof module !== 'undefined' && module.exports){
   $('setNorth').onchange = function(){ settings.northUp = this.checked; saveSettings(); compute(); renderRefs(); };
   $('setUnit').onchange = function(){ settings.unit = this.value; saveSettings(); compute(); renderRefs(); };
   $('setSeed').oninput = function(){ settings.seedPerKm = Number(this.value)||3; saveSettings(); compute(); };
+  // Slots: applied on change (not per keystroke) so a half-typed "1" of "15"
+  // can't evict cards. Cutting the rail shorter than what's saved asks first.
+  settings.maxRefs = maxRefs();
+  $('setMaxRefs').value = settings.maxRefs;
+  if($('setMaxRefsEcho')) $('setMaxRefsEcho').textContent = settings.maxRefs;
+  $('setMaxRefs').onchange = function(){
+    var n = Math.round(Number(this.value));
+    if(this.value.trim() === '' || !isFinite(n)){ this.value = settings.maxRefs; return; } // cleared — keep what we had
+    var want = clamp(n, REFS_MIN, REFS_MAX);
+    var drop = refs.length - want;
+    if(drop > 0 && !confirm('Keeping '+want+' will delete the '+drop+' oldest reference'+(drop===1?'':'s')+'. Continue?')){
+      this.value = settings.maxRefs; // put the picker back
+      return;
+    }
+    settings.maxRefs = want; this.value = want;
+    if($('setMaxRefsEcho')) $('setMaxRefsEcho').textContent = want;
+    if(drop > 0) refs.length = want;
+    saveSettings(); saveRefs(); renderRefs();
+  };
 
   // ---- inputs ----
   ['gun','tgt','tgtB','spd','hdg','spos','s1p','s1t','s2p','s2t','shT','fireT','predT','wpStep','wpCount'].forEach(function(id){
@@ -1038,8 +1068,11 @@ if (typeof module !== 'undefined' && module.exports){
   }
   function renderRefs(){
     if(!$('refCards')) return;
-    if($('refSummary')) $('refSummary').textContent = refs.length ? '('+refs.length+'/'+MAX_REFS+')' : '';
-    if($('refFull')) $('refFull').style.display = refs.length >= MAX_REFS ? 'block' : 'none';
+    if($('refSummary')) $('refSummary').textContent = refs.length ? '('+refs.length+'/'+maxRefs()+')' : '';
+    if($('refFull')){
+      $('refFull').style.display = refs.length >= maxRefs() ? 'block' : 'none';
+      $('refFull').innerHTML = 'Full ('+maxRefs()+' max) — saving another drops the oldest. Raise the limit in <b>Settings</b>.';
+    }
     if(!refs.length){
       $('refCards').innerHTML='<p class="hint" style="margin:0">No saved references yet. Set a gun and target, name it above, pick a charge and hit <b>Save</b> — the range, bearing and elevation land here as a card.</p>';
       return;
@@ -1090,7 +1123,7 @@ if (typeof module !== 'undefined' && module.exports){
   function addRef(name, gun, tgt, tgtB, charge){
     refs.unshift({ name:name, gun:gun, tgt:tgt, tgtB:tgtB||'', charge:charge||null,
                    chargeB:(tgtB ? charge||null : null), ts:Date.now() });
-    if(refs.length > MAX_REFS) refs.length = MAX_REFS; // newest first, so this drops the oldest
+    if(refs.length > maxRefs()) refs.length = maxRefs(); // newest first, so this drops the oldest
     saveRefs(); renderRefs();
   }
 
