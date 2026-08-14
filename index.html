@@ -155,8 +155,9 @@
   }
   .rail h2{margin-bottom:8px}
   .railSave{display:flex;gap:6px;align-items:stretch;margin-bottom:12px}
-  .railSave input{flex:1;min-width:0;font-size:13px;padding:9px 10px}
+  .railSave input,.railSave select{flex:1;min-width:0;font-size:13px;padding:9px 10px}
   .railSave button{flex:0 0 auto;padding:9px 12px;font-size:13px}
+  .railSave.tight{margin-bottom:6px}
   .refcard{
     background:linear-gradient(180deg,#191309 0%,#0f0b07 100%);
     border:1px solid var(--line);border-left:3px solid var(--line2);border-radius:3px;
@@ -187,6 +188,13 @@
   .rc-foot{display:flex;align-items:center;gap:8px;justify-content:space-between}
   .rc-chg{font:11px/1 var(--mono);color:var(--dim)}
   .rc-chg b{color:var(--accent);font-size:12px}
+  /* per-leg charge picker on a card — the charge is part of the saved reference */
+  .rc-pick{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .rc-pick select{
+    flex:0 0 auto;padding:3px 6px;font:700 11px/1.3 var(--mono);
+    color:var(--accent);border-radius:2px;
+  }
+  .rc-fb{font:10px/1.3 var(--mono);color:var(--accent);min-width:0;flex:1}
   .rc-foot button{padding:6px 12px;font-size:12px}
   /* predicted positions double as "save this as a reference" buttons */
   .posSave{
@@ -207,10 +215,14 @@
 
 <aside class="rail">
   <h2>💾 Saved references <span class="tag" id="refSummary"></span></h2>
-  <div class="railSave">
+  <div class="railSave tight">
     <input id="refName" type="text" placeholder="Name e.g. Enemy HQ" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="railSave">
+    <select id="refCharge" title="Charge to record on the card"><option value="">Auto — min charge</option></select>
     <button id="refSave" class="primary" title="Save current gun + target(s)">Save</button>
   </div>
+  <p class="hint" style="margin:-6px 0 10px">The charge is saved on the card and can be changed there. <b>Auto</b> keeps the lowest that reaches.</p>
   <p class="hint" id="refFull" style="display:none;margin:-6px 0 10px">Full (6 max) — saving another drops the oldest.</p>
   <div id="refCards"></div>
 </aside>
@@ -445,6 +457,16 @@ function validCharges(km, slopes){
 }
 function maxRange(slopes){ slopes = slopes || DEFAULT_SLOPES; return slopes.length * BAND_KM; }
 
+// The charge to fire at `km` given the one the user asked for. A hand-picked
+// charge is honoured whenever it still reaches; otherwise (range crept past its
+// band, or nothing was picked) it falls back to the recommended minimum.
+function pickCharge(km, wanted, slopes){
+  var vc = validCharges(km, slopes);
+  if(!vc.length) return null;
+  for(var i=0;i<vc.length;i++) if(vc[i].charge === wanted) return vc[i];
+  return vc[0];
+}
+
 // ---- Time of flight (calibratable) ----
 // Measured in game with the stopwatch: flight time is strictly proportional to
 // range for a given charge (t = m * km, no intercept), with m fixed per charge.
@@ -635,7 +657,7 @@ function trackWaypoints(gun, anchor, wvx, wvy, t0, opts, cfg, cal){
 if (typeof module !== 'undefined' && module.exports){
   module.exports = { DEFAULT_SLOPES:DEFAULT_SLOPES, ELEV_CAP:ELEV_CAP, BAND_KM:BAND_KM,
     parsePosition:parsePosition, toWorld:toWorld, worldToPos:worldToPos, rangeBearing:rangeBearing,
-    validCharges:validCharges, maxRange:maxRange, tofSeed:tofSeed, fitTOF:fitTOF, tofFor:tofFor,
+    validCharges:validCharges, pickCharge:pickCharge, maxRange:maxRange, tofSeed:tofSeed, fitTOF:fitTOF, tofFor:tofFor,
     DEFAULT_TOF_PER_KM:DEFAULT_TOF_PER_KM,
     solveIntercept:solveIntercept, normDeg:normDeg, worldToPseudo:worldToPseudo,
     parseTimeToSeconds:parseTimeToSeconds, fmtClock:fmtClock, trackVelocity:trackVelocity, posAt:posAt,
@@ -751,6 +773,7 @@ if (typeof module !== 'undefined' && module.exports){
       }
     } else trackOverlay = null;
 
+    syncRefCharge();
     drawMap();
   }
 
@@ -831,7 +854,7 @@ if (typeof module !== 'undefined' && module.exports){
       any = true;
       var impact = tFire + sol.t;
       var est = sol.src==='seed' ? ' <span class="pill est">EST</span>' : '';
-      var aimCell = posSaveCell(sol.point, 'Aim C'+k+' '+fmtT(impact, isClock), true);
+      var aimCell = posSaveCell(sol.point, 'Aim C'+k+' '+fmtT(impact, isClock), true, k);
       out += '<tr><td>'+k+'</td><td>'+aimCell+'</td><td>'+fmtBearing(sol.bearing)+'</td><td>'+fmtElev(sol.elevation)+
              '</td><td>'+sol.t.toFixed(1)+'s</td><td>'+fmtT(impact, isClock)+est+'</td></tr>';
     }
@@ -966,19 +989,40 @@ if (typeof module !== 'undefined' && module.exports){
 
   // ---- saved references ----
   function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
-  // Range / bearing / elevation for one leg of a saved reference (gun -> given target).
-  function refLeg(ref, tgtStr){
+  // Options for a charge picker at `km`: "auto" plus every charge that reaches.
+  // `sel` is the charge currently chosen (0 / null = auto).
+  function chargeOptionsHTML(km, sel){
+    var vc = (km > 0) ? validCharges(km, DEFAULT_SLOPES) : [];
+    var auto = vc.length ? ' (C'+vc[0].charge+')' : '';
+    var html = '<option value=""'+(sel?'':' selected')+'>Auto — min charge'+auto+'</option>';
+    for(var i=0;i<vc.length;i++){
+      html += '<option value="'+vc[i].charge+'"'+(sel===vc[i].charge?' selected':'')+'>'+
+              'C'+vc[i].charge+' · '+fmtElev(vc[i].elevation)+'</option>';
+    }
+    return html;
+  }
+  // Range / bearing / elevation for one leg of a saved reference (gun -> given
+  // target), worked out at the charge saved on the card (or the minimum).
+  function refLeg(ref, tgtStr, want){
     var g=parsePosition(ref.gun), t=parsePosition(tgtStr);
     if(!g||!t) return null;
-    var rb=rangeBearing(g,t,settings.northUp), ch=validCharges(rb.km)[0];
-    return { km:rb.km, bearing:rb.bearing, charge:ch?ch.charge:null, elevation:ch?ch.elevation:null };
+    var rb=rangeBearing(g,t,settings.northUp), ch=pickCharge(rb.km, want, DEFAULT_SLOPES);
+    return { km:rb.km, bearing:rb.bearing, charge:ch?ch.charge:null, elevation:ch?ch.elevation:null,
+             fellBack: !!(want && ch && ch.charge !== want) };
   }
-  function legHTML(ref, tgtStr, label){
-    var lg=refLeg(ref, tgtStr), lab='';
+  // `key` names the field on the ref holding this leg's charge, so each target
+  // of a two-target card keeps its own pick.
+  function legHTML(ref, i, tgtStr, key, label){
+    var want=Number(ref[key])||0, lg=refLeg(ref, tgtStr, want), lab='';
     if(label) lab='<span class="lbl'+(label==='B'?' b':'')+'">'+label+'</span>';
     var head='<div class="rc-tgt">'+lab+'<span>'+esc(tgtStr||'—')+'</span></div>';
     if(!lg) return head+'<div class="rc-oor">Invalid position</div>';
     var elev = lg.charge ? fmtElev(lg.elevation) : '—';
+    var pick = '<div class="rc-pick">'+
+      '<select class="refChg" data-i="'+i+'" data-key="'+key+'" title="Charge for this target">'+
+        chargeOptionsHTML(lg.km, want)+'</select>'+
+      (lg.fellBack ? '<span class="rc-fb">C'+want+' can\'t reach — using C'+lg.charge+'</span>' : '')+
+    '</div>';
     return head+
       '<div class="rc-stats">'+
         '<div class="rc-stat"><span class="k">Range</span><span class="v">'+lg.km.toFixed(2)+'<small>km</small></span></div>'+
@@ -986,7 +1030,7 @@ if (typeof module !== 'undefined' && module.exports){
         '<div class="rc-stat"><span class="k">Elev</span><span class="v">'+esc(elev)+'</span></div>'+
       '</div>'+
       (lg.charge
-        ? '<div class="rc-chg">recommended charge <b>C'+lg.charge+'</b></div>'
+        ? pick
         : '<div class="rc-oor">Out of range (max '+maxRange()+' km)</div>');
   }
   function renderRefs(){
@@ -994,7 +1038,7 @@ if (typeof module !== 'undefined' && module.exports){
     if($('refSummary')) $('refSummary').textContent = refs.length ? '('+refs.length+'/'+MAX_REFS+')' : '';
     if($('refFull')) $('refFull').style.display = refs.length >= MAX_REFS ? 'block' : 'none';
     if(!refs.length){
-      $('refCards').innerHTML='<p class="hint" style="margin:0">No saved references yet. Set a gun and target, name it above and hit <b>Save</b> — the range, bearing and elevation land here as a card.</p>';
+      $('refCards').innerHTML='<p class="hint" style="margin:0">No saved references yet. Set a gun and target, name it above, pick a charge and hit <b>Save</b> — the range, bearing and elevation land here as a card.</p>';
       return;
     }
     var html='';
@@ -1004,8 +1048,8 @@ if (typeof module !== 'undefined' && module.exports){
         '<div class="rc-head"><div class="rc-title"><span class="rc-name" title="'+esc(ref.name)+'">'+esc(ref.name)+'</span>'+
           (i===0 ? '<span class="pill new">NEW!</span>' : '')+'</div>'+
           '<button data-i="'+i+'" class="refDel rc-del" title="Delete">✕</button></div>'+
-        legHTML(ref, ref.tgt, two?'A':'')+
-        (two ? legHTML(ref, ref.tgtB, 'B') : '')+
+        legHTML(ref, i, ref.tgt, 'charge', two?'A':'')+
+        (two ? legHTML(ref, i, ref.tgtB, 'chargeB', 'B') : '')+
         '<div class="rc-foot"><span class="rc-chg muted">gun '+esc(ref.gun||'—')+'</span>'+
           '<button data-i="'+i+'" class="refLoad primary">Load</button></div>'+
       '</div>';
@@ -1013,6 +1057,13 @@ if (typeof module !== 'undefined' && module.exports){
     $('refCards').innerHTML=html;
     Array.prototype.forEach.call(document.querySelectorAll('.refLoad'), function(b){ b.onclick=function(){ loadRef(+this.getAttribute('data-i')); }; });
     Array.prototype.forEach.call(document.querySelectorAll('.refDel'), function(b){ b.onclick=function(){ refs.splice(+this.getAttribute('data-i'),1); saveRefs(); renderRefs(); }; });
+    Array.prototype.forEach.call(document.querySelectorAll('.refChg'), function(s){
+      s.onchange=function(){
+        var ref = refs[+this.getAttribute('data-i')]; if(!ref) return;
+        ref[this.getAttribute('data-key')] = Number(this.value) || null;
+        saveRefs(); renderRefs();
+      };
+    });
   }
   function loadRef(i){
     var ref=refs[i]; if(!ref) return;
@@ -1022,12 +1073,20 @@ if (typeof module !== 'undefined' && module.exports){
     if(ref.tgtB && $('tgtB')) $('tgtB').value = ref.tgtB;
     syncTgtB();
     compute();
+    // compute() rebuilt the picker for this range — show the card's own charge
+    if($('refCharge')){
+      $('refCharge').value = ref.charge ? String(ref.charge) : '';
+      if($('refCharge').selectedIndex < 0) $('refCharge').value = '';
+    }
     if(typeof window !== 'undefined' && window.scrollTo){ try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); } }
   }
   // Single place references get added, so the newest-first order and the cap
   // rule live in one spot rather than at every call site.
-  function addRef(name, gun, tgt, tgtB){
-    refs.unshift({ name:name, gun:gun, tgt:tgt, tgtB:tgtB||'', ts:Date.now() });
+  // `charge` (null = auto/min) is applied to both legs; each falls back on its
+  // own if the range puts that charge out of reach.
+  function addRef(name, gun, tgt, tgtB, charge){
+    refs.unshift({ name:name, gun:gun, tgt:tgt, tgtB:tgtB||'', charge:charge||null,
+                   chargeB:(tgtB ? charge||null : null), ts:Date.now() });
     if(refs.length > MAX_REFS) refs.length = MAX_REFS; // newest first, so this drops the oldest
     saveRefs(); renderRefs();
   }
@@ -1036,16 +1095,29 @@ if (typeof module !== 'undefined' && module.exports){
     var t = $('tgt').value.trim();
     if(!parsePosition(t)){ alert('Set a valid Target A before saving a reference.'); return; }
     var name = ($('refName').value || '').trim() || ('Target '+t);
-    addRef(name, $('gun').value.trim(), t, (tgtBOn() && $('tgtB')) ? $('tgtB').value.trim() : '');
+    addRef(name, $('gun').value.trim(), t, (tgtBOn() && $('tgtB')) ? $('tgtB').value.trim() : '',
+           $('refCharge') ? Number($('refCharge').value)||null : null);
     $('refName').value='';
   };
 
+  // The rail's charge picker tracks the live gun → Target A solution; a pick
+  // that no longer reaches quietly reverts to auto.
+  var refChgHTML = '';
+  function syncRefCharge(){
+    var s = $('refCharge'); if(!s) return;
+    var g = parsePosition($('gun').value), t = parsePosition($('tgt').value);
+    var km = (g && t) ? rangeBearing(g, t, settings.northUp).km : 0;
+    var html = chargeOptionsHTML(km, Number(s.value)||0);
+    if(html === refChgHTML) return; // untouched by this keystroke — leave the picker alone
+    refChgHTML = html; s.innerHTML = html;
+  }
+
   // Save a predicted position straight off the intercept / track tables.
-  function saveRefFromPos(pos, name, btn){
+  function saveRefFromPos(pos, name, charge, btn){
     var gunS = $('gun').value.trim();
     if(!parsePosition(gunS)){ alert('Set a valid gun position before saving a reference.'); return; }
     if(!parsePosition(pos)){ alert('That predicted position is not a valid grid reference.'); return; }
-    addRef(name, gunS, pos, '');
+    addRef(name, gunS, pos, '', charge);
     if(btn){
       var prev = btn.textContent;
       btn.textContent = '✓ saved'; btn.classList.add('saved');
@@ -1056,13 +1128,17 @@ if (typeof module !== 'undefined' && module.exports){
   if($('moveBody')) $('moveBody').addEventListener('click', function(e){
     var b = e.target && e.target.closest ? e.target.closest('.posSave') : null;
     if(!b) return;
-    saveRefFromPos(b.getAttribute('data-pos'), b.getAttribute('data-name'), b);
+    saveRefFromPos(b.getAttribute('data-pos'), b.getAttribute('data-name'),
+                   Number(b.getAttribute('data-charge')) || null, b);
   });
   // Position cell rendered as a save button; plain text when it can't be saved.
-  function posSaveCell(pos, name, saveable){
+  // `charge` is the row's own charge, so the card lands on the charge the row
+  // was solved for (blank on rows that just quote the minimum).
+  function posSaveCell(pos, name, saveable, charge){
     if(!saveable) return esc(pos);
     return '<button type="button" class="posSave" data-pos="'+esc(pos)+'" data-name="'+esc(name)+
-           '" title="Save '+esc(pos)+' as a reference card">'+esc(pos)+'</button>';
+           '" data-charge="'+(charge||'')+
+           '" title="Save '+esc(pos)+' as a reference card'+(charge?' at C'+charge:'')+'">'+esc(pos)+'</button>';
   }
   Array.prototype.forEach.call(document.querySelectorAll('input[name=vsrc]'), function(r){
     r.addEventListener('change', function(){
@@ -1102,6 +1178,13 @@ if (typeof module !== 'undefined' && module.exports){
     var e12 = validCharges(12).map(function(x){return +x.elevation.toFixed(1);});
     ok('elevations @12km = 48/36/28.8/24', e12.join(',')==='48,36,28.8,24', e12.join(','));
     ok('35km = out of range', validCharges(35).length===0, validCharges(35).length);
+
+    // charge picked for a saved reference
+    ok('picked C5 @12km is honoured', pickCharge(12,5).charge===5, pickCharge(12,5).charge);
+    ok('picked C5 @12km elevation = 28.8°', near(pickCharge(12,5).elevation,28.8,1e-9), pickCharge(12,5).elevation);
+    ok('picked C2 @12km falls back to C3', pickCharge(12,2).charge===3, pickCharge(12,2).charge);
+    ok('no pick @12km = min charge', pickCharge(12,0).charge===3, pickCharge(12,0).charge);
+    ok('any pick @35km = null', pickCharge(35,5)===null, pickCharge(35,5));
 
     // intercept: static target reduces to normal solution
     var cfgT = { northUp:true, seedPerKm:3, slopes:DEFAULT_SLOPES };

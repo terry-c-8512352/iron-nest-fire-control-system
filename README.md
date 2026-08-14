@@ -68,14 +68,25 @@ each with its own coloured line and live range/bearing on the map.
 Saved references live in the **left-hand rail**, always on screen as a stack of cards —
 handy for known targets (HQ, bridges, chokepoints).
 
-- Type a name and hit **Save**; it snapshots the gun, Target A and Target B (if enabled).
+- Type a name, pick the **charge** you want the card to carry, and hit **Save**; it
+  snapshots the gun, Target A and Target B (if enabled).
 - You can keep **6** at a time — the header shows how many slots are used (e.g. `4/6`).
   Saving a 7th drops the **oldest** automatically, so the rail stays a short list of what
   you're actually shooting at. Delete one with **✕** to free a slot deliberately.
 - Each card shows the target grid and its **range, bearing and elevation** as three
-  read-at-a-glance figures, plus the recommended charge — so a known target is a glance,
+  read-at-a-glance figures, plus the charge it's laid for — so a known target is a glance,
   not a re-entry.
-- A two-target reference gets **two** stat rows on the one card, labelled **A** and **B**.
+- **The charge is yours to choose.** The picker beside **Save** lists every charge that
+  reaches the target, with the elevation each one needs; **Auto** (the default) keeps the
+  old behaviour — the lowest charge that reaches. If you'd rather shoot a flatter, faster
+  arc, pick it and the card is laid for that charge, elevation and all.
+- Changed your mind? Every card has the same picker, so you can re-lay a saved reference on
+  a different charge without re-entering it. The change sticks.
+- If a card's charge can no longer reach — you edited the gun position, say — the card
+  falls back to the minimum charge and says so rather than showing an impossible elevation.
+- A two-target reference gets **two** stat rows on the one card, labelled **A** and **B**,
+  each with its **own** charge picker (both start on the charge you saved with, where it
+  reaches).
 - **Load** drops the positions straight back onto the map (re-enabling the second target
   if the reference had one) and recomputes. **✕** deletes it.
 - Cards follow your **Settings** — switch bearing to mils and they update with everything
@@ -157,8 +168,10 @@ describing the same track.
 **Click any predicted position** — an aim point in the intercept table, or a waypoint in
 the track table — to save it straight to the reference rail as a card, named for what it
 was (`Aim C4 07:40:22`, `Track 1.5km 07:42:30`). The card carries its own range, bearing
-and elevation from your current gun, and **Load** puts it back on the map. Positions that
-have run off the grid aren't offered, and the usual 6-card cap applies.
+and elevation from your current gun, and **Load** puts it back on the map. An aim point
+saves **on its own row's charge** — click the C4 row and you get a C4 card — while a track
+waypoint saves on Auto, which is the charge that row already quotes. Positions that have
+run off the grid aren't offered, and the usual 6-card cap applies.
 
 The course is also **plotted on the map**: a pencilled track line from the sighting, with a
 fix mark and distance label at every waypoint and an arrowhead showing which way it's
